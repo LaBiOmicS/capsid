@@ -25,7 +25,7 @@ dependencies = [
     "pydantic>=2.14.3",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
-    "typer>=0.28.0",
+    "typer>=0.29.1",
 ]
 
 [project.urls]
@@ -39,7 +39,7 @@ Recipes = "https://github.com/LaBiOmicS/capsid-hub"
 capsid = "capsid:main"
 
 [build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
+requires = ["uv_build>=0.13.8,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
