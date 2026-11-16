@@ -29,8 +29,8 @@ def test_export_nextflow_process():
     nf = export_nextflow_process(recipe)
 
     assert "process SAMTOOLS {" in nf
-    assert "oras://ghcr.io/capsid-sif/samtools:1.25" in nf
-    assert "ghcr.io/capsid/samtools:1.25" in nf
+    assert "oras://" not in nf
+    assert "ghcr.io/labiomics/capsid/samtools:1.25" in nf
     assert "versions.yml" in nf
     assert "samtools: \"1.25\"" in nf
 
@@ -40,7 +40,7 @@ def test_export_snakemake_rule():
     smk = export_snakemake_rule(recipe)
 
     assert "rule samtools:" in smk
-    assert 'container:\n        "docker://ghcr.io/capsid/samtools:1.25"' in smk
+    assert 'container:\n        "docker://ghcr.io/labiomics/capsid/samtools:1.25"' in smk
     assert "samtools \\" in smk
 
 
@@ -54,7 +54,7 @@ def test_export_nextflow_config():
     assert "docker {" in cfg
     assert "slurm {" in cfg
     assert "withName: 'SAMTOOLS' {" in cfg
-    assert "container = 'ghcr.io/capsid/samtools:1.25'" in cfg
+    assert "container = 'ghcr.io/labiomics/capsid/samtools:1.25'" in cfg
 
 
 def test_export_apptainer_def():
@@ -62,5 +62,5 @@ def test_export_apptainer_def():
     app_def = export_apptainer_def(recipe)
 
     assert "Bootstrap: docker" in app_def
-    assert "From: ghcr.io/capsid/samtools:1.25" in app_def
+    assert "From: ghcr.io/labiomics/capsid/samtools:1.25" in app_def
     assert "exec samtools" in app_def

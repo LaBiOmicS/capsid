@@ -7,11 +7,13 @@ for scientific tools packaged by Capsid, ensuring FAIR scientific data principle
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 from capsid.models import Recipe
+from capsid.project import HUB_URL
 
 
 def generate_ro_crate(recipe: Recipe) -> Dict[str, Any]:
     """Generate RO-Crate 1.1 JSON-LD dictionary for a Capsid recipe."""
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # SOURCE_DATE_EPOCH, not "now": the document is embedded in the image and must be reproducible
+    now_iso = datetime.fromtimestamp(recipe.build.source_date_epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     root_id = "./"
     software_id = f"#tool-{recipe.name}-{recipe.version}"
@@ -51,7 +53,7 @@ def generate_ro_crate(recipe: Recipe) -> Dict[str, Any]:
             "name": recipe.name,
             "softwareVersion": str(recipe.version),
             "description": recipe.description or "",
-            "url": recipe.homepage or f"https://github.com/capsid/capsid-hub",
+            "url": recipe.homepage or HUB_URL,
             "applicationCategory": recipe.categories,
             "operatingSystem": "Linux (x86_64, aarch64)",
             "softwareRequirements": [f"engine: {recipe.build.type.value}"]

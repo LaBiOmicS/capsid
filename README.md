@@ -213,9 +213,34 @@ capsid/
     ├── tester.py         # Multi-engine runtime test validator
     ├── catalog.py        # Central registry & GA4GH TRS compiler
     ├── locking.py        # pixi.lock / requirements.lock generation (capsid lock)
+    ├── project.py        # GitHub repos (LaBiOmicS/capsid, LaBiOmicS/capsid-hub) and registry
+    ├── schema.py         # JSON Schema of recipe.yaml / stack.yaml (capsid schema)
+    ├── templating.py     # Shared Jinja environment (minijinja-compatible subset)
+    ├── templates/        # dockerfile/*.j2 and exports/*.j2
     ├── builders/         # Multi-stage Dockerfile generators & runners
     └── scaffolders/      # Upstream inspectors (PyPI, Bioconda, GitHub)
+scripts/
+├── bump_pins.py          # refresh base-image digests + apt snapshot
+└── update_golden.py      # regenerate the golden set from the hub
+tests/golden/             # golden inputs (hub recipes/stacks) and expected outputs
 ```
+
+---
+
+## 📐 Cross-language contract
+
+Everything Capsid generates is specified independently of the Python code, so another
+implementation (e.g. a Rust/Wasm core) can be checked against the same artefacts:
+
+| Contract | Where | Checked by |
+| :--- | :--- | :--- |
+| Recipe / stack format | JSON Schema, `capsid schema` → `capsid-hub/schema/*.schema.json` | hub CI (`capsid schema --check`), editors via `yaml.schemas` |
+| Templates | `src/capsid/templates/**/*.j2`, Jinja2 subset shared with minijinja; custom filters `dq` and `shq` (see `templating.py`) | `tests/test_minijinja_compat.py` renders the whole golden set with minijinja |
+| Outputs | `tests/golden/expected/`: Dockerfile, `module.nf`, `rule.smk`, `Singularity.def`, `nextflow.config` per hub recipe; Dockerfile per stack; `catalog.json`; schemas | `tests/test_golden.py` (byte for byte) |
+
+Timestamps inside generated files come from `SOURCE_DATE_EPOCH`, never from the clock, so the
+outputs are deterministic. Refresh the golden set deliberately and review the diff:
+`python scripts/update_golden.py --hub ../capsid-hub`.
 
 ---
 

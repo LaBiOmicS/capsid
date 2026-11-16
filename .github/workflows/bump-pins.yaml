@@ -38,7 +38,7 @@ jobs:
 
       - name: Unit tests
         if: steps.bump.outputs.changed == 'true'
-        run: uv run --with pytest pytest -q
+        run: uv run pytest -q
 
       # Real builds against the new pins: pixi-conda and uv-pypi, locked, with container tests
       - name: Smoke builds

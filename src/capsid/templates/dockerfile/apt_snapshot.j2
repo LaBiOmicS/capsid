@@ -1,0 +1,18 @@
+# Freeze apt to snapshot.debian.org/{{ snapshot }} for reproducible system packages
+RUN printf '%s\n' \
+        'Types: deb' \
+        'URIs: http://snapshot.debian.org/archive/debian/{{ snapshot }}' \
+        'Suites: {{ suite }} {{ suite }}-updates' \
+        'Components: main' \
+        'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        'Check-Valid-Until: no' \
+        '' \
+        'Types: deb' \
+        'URIs: http://snapshot.debian.org/archive/debian-security/{{ snapshot }}' \
+        'Suites: {{ suite }}-security' \
+        'Components: main' \
+        'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        'Check-Valid-Until: no' \
+        > /etc/apt/sources.list.d/debian.sources \
+    && rm -f /etc/apt/sources.list \
+    && echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-capsid-retries

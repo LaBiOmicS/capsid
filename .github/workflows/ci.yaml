@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      # Unit tests + golden tests (byte-exact Dockerfiles/exports/catalog/schema for every
+      # hub recipe) + the same golden set rendered through minijinja (Rust engine)
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Golden set is up to date
+        run: uv run python scripts/update_golden.py --check

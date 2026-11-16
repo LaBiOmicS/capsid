@@ -1,0 +1,48 @@
+# ---- Builder: compile from verified source ----
+FROM {{ builder_base }} AS source_builder
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG SOURCE_DATE_EPOCH={{ source_date_epoch }}
+
+{{ apt_setup }}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        bzip2 \
+        gzip \
+        xz-utils \
+        tar \
+{% for dep in build_deps %}
+        {{ dep }} \
+{% endfor %}
+    && rm -rf /var/lib/apt/lists/* /var/log/apt/* /var/log/dpkg.log \
+        /var/cache/ldconfig/aux-cache /var/cache/debconf/*-old /var/lib/dpkg/*-old
+
+WORKDIR /src
+RUN curl -fsSL {{ source | shq }} -o archive.tar \
+    && echo "{{ sha256 }}  archive.tar" | sha256sum -c - \
+    && mkdir -p /src/unpack \
+    && tar -xf archive.tar -C /src/unpack --strip-components=1
+
+WORKDIR /src/unpack
+
+# Embed an RPATH so binaries find their own libraries without a global LD_LIBRARY_PATH
+ENV LDFLAGS="-Wl,-rpath,{{ prefix }}/lib"
+
+{% if build_commands %}
+{% for cmd in build_commands %}
+RUN {{ cmd }}
+{% endfor %}
+{% else %}
+RUN if [ -f configure ]; then \
+        ./configure --prefix={{ prefix }}{% for a in configure_args %} {{ a }}{% endfor %}; \
+    fi && \
+    make -j"$(nproc)" && \
+    (make install prefix={{ prefix }} || make install)
+{% endif %}
+
+# Strip debug symbols to reduce image size
+RUN if [ -d {{ prefix }}/bin ]; then \
+        strip {{ prefix }}/bin/* 2>/dev/null || true; \
+    fi

@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/fastp:1.4.0
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 1.4.0
+    Tool fastp
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec fastp "$@"
+
+%test
+    fastp --help

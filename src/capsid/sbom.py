@@ -8,11 +8,13 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, Any
 from capsid.models import Recipe, BuildType
+from capsid.project import HUB_URL, VENDOR
 
 
 def generate_spdx_sbom(recipe: Recipe) -> Dict[str, Any]:
     """Generate SPDX 2.3 JSON Software Bill of Materials for a recipe."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # SOURCE_DATE_EPOCH, not "now": the document is embedded in the image and must be reproducible
+    timestamp = datetime.fromtimestamp(recipe.build.source_date_epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     spdx_id = f"SPDXRef-Package-{recipe.name}-{recipe.version}".replace(".", "-").replace("_", "-")
 
     # Determine packages based on build engine
@@ -24,7 +26,7 @@ def generate_spdx_sbom(recipe: Recipe) -> Dict[str, Any]:
             "downloadLocation": recipe.homepage or "NOASSERTION",
             "licenseConcluded": recipe.license or "NOASSERTION",
             "licenseDeclared": recipe.license or "NOASSERTION",
-            "supplier": f"Organization: Capsid Community ({recipe.homepage or 'https://github.com/capsid'})",
+            "supplier": f"Organization: {VENDOR} ({HUB_URL})",
             "description": recipe.description or "",
             "filesAnalyzed": False
         }
@@ -61,10 +63,10 @@ def generate_spdx_sbom(recipe: Recipe) -> Dict[str, Any]:
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
         "name": f"Capsid-SBOM-{recipe.name}-{recipe.version}",
-        "documentNamespace": f"https://capsid.bio/sbom/{recipe.name}/{recipe.version}",
+        "documentNamespace": f"{HUB_URL}/sbom/{recipe.name}/{recipe.version}",
         "creationInfo": {
             "created": timestamp,
-            "creators": ["Tool: Capsid Engine-0.1.0", "Organization: Capsid Project"]
+            "creators": ["Tool: Capsid Engine-0.1.0", f"Organization: {VENDOR}"]
         },
         "packages": packages,
         "relationships": [

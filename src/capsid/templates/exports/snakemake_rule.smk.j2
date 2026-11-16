@@ -1,0 +1,23 @@
+# Snakemake Rule for {{ recipe.name }} v{{ recipe.version }}
+# Generated automatically by Capsid Engine ({{ engine_url }})
+
+rule {{ rule_name }}:
+    input:
+        reads = "data/samples/{sample}.fastq.gz"
+    output:
+        result = "results/{{ recipe.name }}/{sample}.out"
+    log:
+        "logs/{{ recipe.name }}/{sample}.log"
+    threads: 4
+    resources:
+        mem_mb = 8000,
+        time = "02:00:00"
+    container:
+        "docker://{{ registry_prefix }}/{{ recipe.name }}:{{ recipe.version }}"
+    shell:
+        """
+        {{ tool_cmd }} \
+            {input.reads} \
+            -o {output.result} \
+            > {log} 2>&1
+        """

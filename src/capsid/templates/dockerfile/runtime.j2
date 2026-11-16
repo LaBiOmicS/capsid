@@ -1,0 +1,71 @@
+# ---- Runtime: hardened, non-root, tini as PID 1, HPC & workflow-engine ready ----
+FROM {{ runtime_base }} AS runtime
+
+ARG SOURCE_DATE_EPOCH={{ source_date_epoch }}
+
+{{ apt_setup }}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tini \
+        ca-certificates \
+        bash \
+{% for dep in run_deps %}
+        {{ dep }} \
+{% endfor %}
+    && rm -rf /var/lib/apt/lists/* /var/log/apt/* /var/log/dpkg.log \
+        /var/cache/ldconfig/aux-cache /var/cache/debconf/*-old /var/lib/dpkg/*-old
+
+# Non-privileged user, universal HPC mount points, sticky scratch permissions
+RUN groupadd -r -g 1000 bio && \
+    useradd -r -u 1000 -g bio -m -d /home/bio -s /bin/bash bio && \
+    mkdir -p /scratch /data /work /lustre /shared /tmp /home/bio && \
+    chmod 1777 /tmp /scratch /data /work /lustre /shared
+
+# PATH for login shells (profile.d) and PAM sessions (/etc/environment is not expanded)
+RUN echo 'export PATH="{{ path }}:${PATH:-}"' > /etc/profile.d/capsid.sh && \
+    chmod 0644 /etc/profile.d/capsid.sh && \
+    echo 'PATH="{{ path }}:{{ system_path }}"' >> /etc/environment
+
+# Tool prefixes are owned by root: readable and executable by bio, not writable
+{% for c in copies %}
+COPY --from={{ c[0] }} {{ c[1] }} {{ c[2] }}
+{% endfor %}
+RUN chmod -R a+rX {{ copy_targets | join(' ') }}
+
+# -------------------------------------------------------------
+# FAIR & provenance assets (/etc/capsid/)
+# -------------------------------------------------------------
+RUN mkdir -p /etc/capsid
+{% for c in provenance_copies %}
+COPY --from={{ c[0] }} {{ c[1] }} {{ c[2] }}
+{% endfor %}
+{% for asset in fair_assets %}
+
+COPY <<'{{ asset.marker }}' /etc/capsid/{{ asset.filename }}
+{{ asset.content }}
+{{ asset.marker }}
+{% endfor %}
+
+RUN chmod -R a+rX /etc/capsid
+
+ENV PATH="{{ path }}:$PATH" \
+{% for k, v in extra_env %}
+    {{ k }}="{{ v | dq }}" \
+{% endfor %}
+    HOME="/home/bio" \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    XDG_CACHE_HOME="/tmp/.cache" \
+    PYTHONPYCACHEPREFIX="/tmp/pycache" \
+    NUMBA_CACHE_DIR="/tmp/numba" \
+    MPLCONFIGDIR="/tmp/matplotlib"
+
+LABEL {% for k, v in labels %}{% if not loop.first %}      {% endif %}{{ k }}="{{ v | dq }}"{% if not loop.last %} \{% endif %}
+
+{% endfor %}
+
+# Numeric UID so Kubernetes runAsNonRoot can verify it
+USER 1000:1000
+WORKDIR /home/bio
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/bin/bash"]

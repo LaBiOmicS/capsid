@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/bedtools:2.31.1
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 2.31.1
+    Tool bedtools
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec bedtools "$@"
+
+%test
+    bedtools

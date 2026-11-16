@@ -18,7 +18,9 @@ from capsid.linter import lint_recipe
 
 console = Console()
 
-DEFAULT_UPSTREAM_REPO = "capsid/capsid-hub"
+from capsid.project import HUB_REPO
+
+DEFAULT_UPSTREAM_REPO = HUB_REPO
 
 
 def check_gh_authenticated() -> bool:

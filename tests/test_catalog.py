@@ -39,4 +39,4 @@ def test_build_catalog_dict():
     assert "container_uris" in sam
     assert "nextflow" in sam["container_uris"]
     assert "snakemake" in sam["container_uris"]
-    assert "singularity_oras" in sam["container_uris"]
+    assert "apptainer" in sam["container_uris"]

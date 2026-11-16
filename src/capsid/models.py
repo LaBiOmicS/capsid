@@ -25,6 +25,9 @@ class Platform(str, Enum):
 
 
 APT_SNAPSHOT_RE = re.compile(r"\d{8}T\d{6}Z")
+# JSON Schema mirrors of the field validators below (keep in sync)
+APT_SNAPSHOT_PATTERN = r"^(\d{8}T\d{6}Z|latest)$"
+SHA256_PATTERN = r"^\s*[0-9a-fA-F]{64}\s*$"
 
 
 def validate_apt_snapshot(v: Optional[str]) -> Optional[str]:
@@ -45,7 +48,8 @@ class BuildConfig(BaseModel):
 
     # Source compilation & binary options
     source: Optional[str] = Field(None, description="Source archive or repository URL")
-    sha256: Optional[str] = Field(None, description="SHA256 checksum of source archive")
+    sha256: Optional[str] = Field(None, description="SHA256 checksum of source archive",
+                                  json_schema_extra={"pattern": SHA256_PATTERN})
     configure_args: Optional[List[str]] = Field(default_factory=list, description="Extra arguments for ./configure")
     cmake_args: Optional[List[str]] = Field(default_factory=list, description="Extra arguments for cmake")
     build_commands: Optional[List[str]] = Field(default_factory=list, description="Custom shell build commands")
@@ -65,6 +69,7 @@ class BuildConfig(BaseModel):
         None,
         description="snapshot.debian.org timestamp (YYYYMMDDTHHMMSSZ) for apt packages; 'latest' disables "
                     "the snapshot. Defaults to Capsid's pinned snapshot when base_image is not overridden",
+        json_schema_extra={"pattern": APT_SNAPSHOT_PATTERN},
     )
     base_image: Optional[str] = Field(None, description="Runtime (and source/uv builder) base image, ideally pinned by @sha256 digest")
     source_date_epoch: int = Field(1700000000, description="SOURCE_DATE_EPOCH passed to BuildKit for deterministic image timestamps")
@@ -140,7 +145,8 @@ class StackRecipe(BaseModel):
     description: Optional[str] = Field(None, description="Description of the combined container")
     components: List[StackComponent] = Field(..., description="List of recipes included in this stack")
     test: TestConfig = Field(..., description="Test command verifying all tools work")
-    apt_snapshot: Optional[str] = Field(None, description="snapshot.debian.org timestamp or 'latest'")
+    apt_snapshot: Optional[str] = Field(None, description="snapshot.debian.org timestamp or 'latest'",
+                                        json_schema_extra={"pattern": APT_SNAPSHOT_PATTERN})
 
     # Lockfile contents loaded from sibling files (see capsid.locking); never serialized
     pixi_lock: Optional[str] = Field(None, exclude=True, description="pixi.lock content")

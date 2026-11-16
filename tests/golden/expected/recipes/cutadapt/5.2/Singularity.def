@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/cutadapt:5.2
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 5.2
+    Tool cutadapt
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec cutadapt "$@"
+
+%test
+    python -c 'import cutadapt; print("cutadapt OK")'

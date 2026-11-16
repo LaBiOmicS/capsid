@@ -15,6 +15,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from capsid.models import Recipe
+from capsid.project import HUB_REPO, REGISTRY
 from capsid.scaffolders import scaffold_recipe
 from capsid.builders.dockerfile_gen import generate_dockerfile
 from capsid.builders.runner import build_recipe, publish_image
@@ -67,15 +68,21 @@ def load_recipe(recipe_path: Path) -> Recipe:
         raise typer.Exit(code=1)
 
 
+def recipe_search_dirs() -> List[Path]:
+    """Recipe trees searched for name@version targets: $CAPSID_RECIPES_PATH (os.pathsep-separated) first."""
+    extra = [Path(p) for p in os.environ.get("CAPSID_RECIPES_PATH", "").split(os.pathsep) if p]
+    return extra + [Path("recipes"), Path("capsid-hub/recipes"), Path("../capsid-hub/recipes")]
+
+
+def _version_key(v: str) -> tuple:
+    """Natural sort key: 1.9 < 1.25, numeric parts before text parts."""
+    import re
+    return tuple((0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.split(r"[.\-_+]", v))
+
+
 def find_recipe_candidate(tool_name: str, version: Optional[str] = None) -> Optional[Path]:
     """Search for existing recipe.yaml in standard recipe trees."""
-    search_dirs = [
-        Path("recipes"),
-        Path("capsid-hub/recipes"),
-        Path("../capsid-hub/recipes"),
-        Path("/home/dayhoff/workdir/informatics/containers/capsid-hub/recipes")
-    ]
-    for base in search_dirs:
+    for base in recipe_search_dirs():
         if not base.exists():
             continue
         if version:
@@ -83,15 +90,14 @@ def find_recipe_candidate(tool_name: str, version: Optional[str] = None) -> Opti
             if candidate.exists():
                 return candidate
         else:
-            # Check versionless or latest
+            # Versionless recipe, or the highest version
             candidate = base / tool_name / "recipe.yaml"
             if candidate.exists():
                 return candidate
-            subdirs = sorted([d for d in (base / tool_name).glob("*") if d.is_dir()]) if (base / tool_name).exists() else []
-            if subdirs:
-                latest = subdirs[-1] / "recipe.yaml"
-                if latest.exists():
-                    return latest
+            tool_dir = base / tool_name
+            versions = [d for d in tool_dir.glob("*") if (d / "recipe.yaml").is_file()] if tool_dir.is_dir() else []
+            if versions:
+                return max(versions, key=lambda d: _version_key(d.name)) / "recipe.yaml"
     return None
 
 
@@ -294,6 +300,34 @@ def lock(
 
 
 @app.command()
+def schema(
+    out_dir: Path = typer.Option(Path("schema"), "--out-dir", "-o", help="Directory for recipe.schema.json / stack.schema.json"),
+    check: bool = typer.Option(False, "--check", help="Only verify the files are up to date (exit 1 if not)"),
+):
+    """
+    📐 Writes the JSON Schema of recipe.yaml and stack.yaml (the cross-language contract).
+    """
+    from capsid.schema import dumps, schemas
+
+    stale = []
+    for name, sch in schemas().items():
+        path = out_dir / name
+        content = dumps(sch)
+        if path.is_file() and path.read_text() == content:
+            continue
+        stale.append(path)
+        if not check:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+            console.print(f"[bold green]✔ Wrote {path}[/bold green]")
+    if check and stale:
+        console.print(f"[bold red]Out of date: {', '.join(map(str, stale))} -- run `capsid schema`[/bold red]")
+        raise typer.Exit(code=1)
+    if not stale:
+        console.print("[green]Schemas are up to date.[/green]")
+
+
+@app.command()
 def test(
     target: str = typer.Argument(..., help="Path to recipe.yaml, stack.yaml, or package target"),
     image: Optional[str] = typer.Option(None, "--image", "-i", help="Image tag to test (defaults to recipe/stack canonical tag)"),
@@ -324,7 +358,7 @@ def test(
 @export_app.command("nextflow")
 def export_nf(
     target: str = typer.Argument(..., help="Recipe path or target name (e.g. 'samtools@1.25' or 'cutadapt')"),
-    registry: str = typer.Option("ghcr.io/capsid", "--registry", "-r", help="OCI Registry prefix"),
+    registry: str = typer.Option(REGISTRY, "--registry", "-r", help="OCI Registry prefix"),
     output: Optional[Path] = typer.Option(None, "--out", "-o", help="Save Nextflow process to file")
 ):
     """
@@ -343,7 +377,7 @@ def export_nf(
 @export_app.command("snakemake")
 def export_smk(
     target: str = typer.Argument(..., help="Recipe path or target name (e.g. 'bwa@0.7.19')"),
-    registry: str = typer.Option("ghcr.io/capsid", "--registry", "-r", help="OCI Registry prefix"),
+    registry: str = typer.Option(REGISTRY, "--registry", "-r", help="OCI Registry prefix"),
     output: Optional[Path] = typer.Option(None, "--out", "-o", help="Save Snakemake rule to file")
 ):
     """
@@ -362,7 +396,7 @@ def export_smk(
 @export_app.command("config")
 def export_cfg(
     target: Optional[str] = typer.Option(None, "--target", "-t", help="Optional specific recipe target"),
-    registry: str = typer.Option("ghcr.io/capsid", "--registry", "-r", help="OCI Registry prefix"),
+    registry: str = typer.Option(REGISTRY, "--registry", "-r", help="OCI Registry prefix"),
     output: Optional[Path] = typer.Option(None, "--out", "-o", help="Save nextflow.config to file")
 ):
     """
@@ -652,7 +686,7 @@ def lint(
 @app.command()
 def submit(
     target: str = typer.Argument(..., help="Recipe file path or target (e.g. 'recipes/samtools/1.25/recipe.yaml' or 'bioconda:samtools@1.25')"),
-    upstream: str = typer.Option("capsid/capsid-hub", "--upstream", "-u", help="Upstream Capsid Hub repository (owner/repo)"),
+    upstream: str = typer.Option(HUB_REPO, "--upstream", "-u", help="Upstream Capsid Hub repository (owner/repo)"),
     web: bool = typer.Option(False, "--web", "-w", help="Generate 1-click web submission form instead of Git PR")
 ):
     """
@@ -681,7 +715,7 @@ def submit(
 
 @app.command()
 def sync(
-    upstream: str = typer.Option("capsid/capsid-hub", "--upstream", "-u", help="Upstream Capsid Hub repository (owner/repo)"),
+    upstream: str = typer.Option(HUB_REPO, "--upstream", "-u", help="Upstream Capsid Hub repository (owner/repo)"),
     recipes_dir: Path = typer.Option(Path("recipes"), "--dir", "-d", help="Local recipes directory"),
     catalog_path: Path = typer.Option(Path("catalog.json"), "--catalog", "-c", help="Local catalog.json path")
 ):

@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from capsid.models import Recipe
+from capsid.project import REGISTRY
 
 console = Console()
 
@@ -32,7 +33,7 @@ def scan_recipes(recipes_dir: Path) -> List[Recipe]:
     return recipes
 
 
-def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = "ghcr.io/capsid") -> Dict[str, Any]:
+def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = REGISTRY) -> Dict[str, Any]:
     """Compile recipes list into a catalog structure compatible with GA4GH TRS and search UI."""
     tools: Dict[str, Any] = {}
     
@@ -57,7 +58,7 @@ def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = "ghcr.io/ca
             "hpc_ready": True,
             "container_uris": {
                 "docker": f"docker://{registry_prefix}/{r.name}:{r.version}",
-                "singularity_oras": f"oras://ghcr.io/capsid-sif/{r.name}:{r.version}",
+                "apptainer": f"docker://{registry_prefix}/{r.name}:{r.version}",
                 "nextflow": f"{registry_prefix}/{r.name}:{r.version}",
                 "snakemake": f"docker://{registry_prefix}/{r.name}:{r.version}"
             }

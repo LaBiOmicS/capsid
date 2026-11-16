@@ -14,7 +14,9 @@ from capsid.catalog import scan_recipes, export_catalog
 
 console = Console()
 
-DEFAULT_UPSTREAM_REPO = "capsid/capsid-hub"
+from capsid.project import HUB_REPO
+
+DEFAULT_UPSTREAM_REPO = HUB_REPO
 
 
 def sync_hub(

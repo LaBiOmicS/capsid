@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/minimap2:2.28
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 2.28
+    Tool minimap2
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec minimap2 "$@"
+
+%test
+    minimap2 2>&1 | grep 'Usage'

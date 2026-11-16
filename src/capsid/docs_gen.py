@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
+from capsid.project import REGISTRY
+
 
 def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
     """Generate GitHub-friendly Markdown catalog table and documentation."""
@@ -48,7 +50,7 @@ def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
         "### Nextflow DSL2",
         "```groovy",
         "process SAMTOOLS {",
-        "    container 'ghcr.io/capsid/samtools:1.25'",
+        f"    container '{REGISTRY}/samtools:1.25'",
         "    script:",
         "    \"samtools view -h in.bam > out.sam\"",
         "}",
@@ -57,13 +59,13 @@ def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
         "### Snakemake",
         "```python",
         "rule bwa_mem:",
-        "    container: 'docker://ghcr.io/capsid/bwa:0.7.19'",
+        f"    container: 'docker://{REGISTRY}/bwa:0.7.19'",
         "    shell: 'bwa mem {input} > {output}'",
         "```",
         "",
         "### Apptainer / HPC Direct",
         "```bash",
-        "apptainer exec oras://ghcr.io/capsid-sif/samtools:1.25 samtools --version",
+        f"apptainer exec docker://{REGISTRY}/samtools:1.25 samtools --version",
         "```"
     ])
     return "\n".join(lines) + "\n"
@@ -269,19 +271,19 @@ def generate_catalog_html(catalog_data: Dict[str, Any]) -> str:
     }}
 
     function copyNf(tool, ver) {{
-      const snippet = `container 'ghcr.io/capsid/${{tool}}:${{ver}}'`;
+      const snippet = `container '{REGISTRY}/${{tool}}:${{ver}}'`;
       navigator.clipboard.writeText(snippet);
       showToast(`Copied Nextflow directive for ${{tool}}!`);
     }}
 
     function copySmk(tool, ver) {{
-      const snippet = `container: "docker://ghcr.io/capsid/${{tool}}:${{ver}}"`;
+      const snippet = `container: "docker://{REGISTRY}/${{tool}}:${{ver}}"`;
       navigator.clipboard.writeText(snippet);
       showToast(`Copied Snakemake directive for ${{tool}}!`);
     }}
 
     function copySif(tool, ver) {{
-      const snippet = `apptainer exec oras://ghcr.io/capsid-sif/${{tool}}:${{ver}} ${{tool}} --version`;
+      const snippet = `apptainer exec docker://{REGISTRY}/${{tool}}:${{ver}} ${{tool}} --version`;
       navigator.clipboard.writeText(snippet);
       showToast(`Copied Apptainer command for ${{tool}}!`);
     }}
