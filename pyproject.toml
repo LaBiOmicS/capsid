@@ -1,0 +1,24 @@
+[project]
+name = "capsid"
+version = "0.1.0"
+description = "Capsid: The ultra-slim, secure container factory for science."
+readme = "README.md"
+authors = [
+    { name = "Fabiano Menegidio", email = "labiomics@bioinformatica.com.br" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "typer>=0.28.0",
+]
+
+[project.scripts]
+capsid = "capsid:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"

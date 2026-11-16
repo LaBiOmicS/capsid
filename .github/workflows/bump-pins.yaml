@@ -1,0 +1,64 @@
+name: Bump base-image digests and apt snapshot
+
+on:
+  schedule:
+    # Mondays 05:00 UTC
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Refresh digests (same tags) and DEFAULT_APT_SNAPSHOT
+        id: bump
+        run: |
+          python3 scripts/bump_pins.py | tee "$RUNNER_TEMP/changes.txt"
+          {
+            echo 'Weekly refresh by `scripts/bump_pins.py` (same tags, new digests; apt snapshot = today).'
+            echo 'Unit tests and locked smoke builds (seqkit via pixi, cutadapt via uv, with container tests) passed with the new pins.'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/changes.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/pr-body.md"
+          if git diff --quiet; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Unit tests
+        if: steps.bump.outputs.changed == 'true'
+        run: uv run --with pytest pytest -q
+
+      # Real builds against the new pins: pixi-conda and uv-pypi, locked, with container tests
+      - name: Smoke builds
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          for r in tests/smoke/*/recipe.yaml; do
+            uv run capsid build "$r" --tag "capsid-smoke/$(basename "$(dirname "$r")"):ci"
+          done
+
+      - name: Open pull request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: bot/bump-pins
+          delete-branch: true
+          add-paths: src/capsid/builders/dockerfile_gen.py
+          commit-message: "chore(pins): refresh base-image digests and apt snapshot"
+          title: "chore(pins): refresh base-image digests and apt snapshot"
+          body-path: ${{ runner.temp }}/pr-body.md
+          labels: |
+            dependencies
+            automated
