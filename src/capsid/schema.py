@@ -1,10 +1,11 @@
 """
-JSON Schema (draft 2020-12) for recipe.yaml and stack.yaml -- the language-neutral contract
-for editors, the web submission form and any future (e.g. Rust) implementation.
+JSON Schema (draft 2020-12) for recipe.yaml and stack.yaml, generated from the pydantic
+models: used by editors (validation and completion) and by other tools that read recipes.
 Published in the hub under schema/ by `capsid schema`.
 """
+
 import json
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -16,7 +17,7 @@ SCHEMA_BASE_URL = f"https://raw.githubusercontent.com/{HUB_REPO}/main/schema"
 INTERNAL_FIELDS = ("pixi_lock", "requirements_lock")
 
 
-def _schema(model: type[BaseModel], filename: str, title: str) -> Dict[str, Any]:
+def _schema(model: type[BaseModel], filename: str, title: str) -> dict[str, Any]:
     schema = model.model_json_schema(mode="validation")
     for field in INTERNAL_FIELDS:
         schema.get("properties", {}).pop(field, None)
@@ -28,13 +29,15 @@ def _schema(model: type[BaseModel], filename: str, title: str) -> Dict[str, Any]
     }
 
 
-def schemas() -> Dict[str, Dict[str, Any]]:
+def schemas() -> dict[str, dict[str, Any]]:
     """{filename: schema} for every published schema."""
     return {
-        "recipe.schema.json": _schema(Recipe, "recipe.schema.json", "Capsid recipe (recipes/<tool>/<version>/recipe.yaml)"),
+        "recipe.schema.json": _schema(
+            Recipe, "recipe.schema.json", "Capsid recipe (recipes/<tool>/<version>/recipe.yaml)"
+        ),
         "stack.schema.json": _schema(StackRecipe, "stack.schema.json", "Capsid stack (stacks/<name>.yaml)"),
     }
 
 
-def dumps(schema: Dict[str, Any]) -> str:
+def dumps(schema: dict[str, Any]) -> str:
     return json.dumps(schema, indent=2, sort_keys=True) + "\n"

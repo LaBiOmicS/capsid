@@ -2,8 +2,8 @@
 Unit tests for catalog generator.
 """
 
-from capsid.models import Recipe, BuildConfig, BuildType, TestConfig
 from capsid.catalog import build_catalog_dict
+from capsid.models import BuildConfig, BuildType, Recipe, TestConfig
 
 
 def test_build_catalog_dict():
@@ -15,7 +15,7 @@ def test_build_catalog_dict():
             license="MIT",
             categories=["genomics"],
             build=BuildConfig(type=BuildType.PIXI_CONDA, conda_packages=["samtools==1.25"]),
-            test=TestConfig(command="samtools --version")
+            test=TestConfig(command="samtools --version"),
         ),
         Recipe(
             name="cutadapt",
@@ -24,8 +24,8 @@ def test_build_catalog_dict():
             license="MIT",
             categories=["trimming"],
             build=BuildConfig(type=BuildType.UV_PYPI, package="cutadapt==5.2"),
-            test=TestConfig(command="cutadapt --version")
-        )
+            test=TestConfig(command="cutadapt --version"),
+        ),
     ]
 
     cat = build_catalog_dict(recipes)

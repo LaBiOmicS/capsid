@@ -1,48 +1,90 @@
-# ---- Builder: compile from verified source ----
+# ---- Builder: {{ build_type }} from a checksum-verified download ----
 FROM {{ builder_base }} AS source_builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG SOURCE_DATE_EPOCH={{ source_date_epoch }}
+{% if build_type == "binary" %}
+ARG TARGETARCH
+{% endif %}
 
 {{ apt_setup }}
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        bzip2 \
-        gzip \
-        xz-utils \
-        tar \
-{% for dep in build_deps %}
+{% for dep in apt_packages %}
         {{ dep }} \
 {% endfor %}
     && rm -rf /var/lib/apt/lists/* /var/log/apt/* /var/log/dpkg.log \
         /var/cache/ldconfig/aux-cache /var/cache/debconf/*-old /var/lib/dpkg/*-old
 
 WORKDIR /src
-RUN curl -fsSL {{ source | shq }} -o archive.tar \
-    && echo "{{ sha256 }}  archive.tar" | sha256sum -c - \
-    && mkdir -p /src/unpack \
-    && tar -xf archive.tar -C /src/unpack --strip-components=1
+{% if build_type == "binary" %}
+# One upstream artefact per architecture, each verified against its own checksum
+RUN case "${TARGETARCH}" in \
+{% for arch in binaries %}
+        {{ arch.arch }}) url={{ arch.url | shq }}; sum={{ arch.sha256 }} ;; \
+{% endfor %}
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "$url" -o artefact \
+    && echo "$sum  artefact" | sha256sum -c - \
+    && mkdir -p /src/unpack {{ prefix }}/bin \
+    && case "$url" in \
+        *.tar.gz|*.tgz|*.tar.bz2|*.tbz2|*.tar.xz|*.txz|*.tar) tar -xf artefact -C /src/unpack ;; \
+        *.zip) unzip -q artefact -d /src/unpack ;; \
+        *.gz) gunzip -c artefact > /src/unpack/{{ tool_name }} && chmod 0755 /src/unpack/{{ tool_name }} ;; \
+        *) install -m 0755 artefact /src/unpack/{{ tool_name }} ;; \
+    esac
 
 WORKDIR /src/unpack
-
-# Embed an RPATH so binaries find their own libraries without a global LD_LIBRARY_PATH
-ENV LDFLAGS="-Wl,-rpath,{{ prefix }}/lib"
-
 {% if build_commands %}
 {% for cmd in build_commands %}
 RUN {{ cmd }}
 {% endfor %}
 {% else %}
-RUN if [ -f configure ]; then \
-        ./configure --prefix={{ prefix }}{% for a in configure_args %} {{ a }}{% endfor %}; \
-    fi && \
-    make -j"$(nproc)" && \
-    (make install prefix={{ prefix }} || make install)
+# Install every executable file shipped in the artefact into {{ prefix }}/bin
+RUN find . -maxdepth 4 -type f -perm -u+x -exec install -m 0755 -t {{ prefix }}/bin {} + \
+    && test -n "$(ls -A {{ prefix }}/bin)"
+{% endif %}
+{% else %}
+RUN curl -fsSL {{ source | shq }} -o archive \
+    && echo "{{ sha256 }}  archive" | sha256sum -c - \
+    && mkdir -p /src/unpack \
+    && tar -xf archive -C /src/unpack --strip-components=1
+
+WORKDIR /src/unpack
+
+{% if build_type == "rust-cargo" %}
+ENV CARGO_HOME=/tmp/cargo \
+    CARGO_TERM_COLOR=never
+{% else %}
+# Embed an RPATH so binaries find their own libraries without a global LD_LIBRARY_PATH
+ENV LDFLAGS="-Wl,-rpath,{{ prefix }}/lib"
+{% endif %}
+
+{% if build_commands %}
+{% for cmd in build_commands %}
+RUN {{ cmd }}
+{% endfor %}
+{% elif build_type == "cmake" %}
+RUN cmake -S . -B /src/build -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX={{ prefix }} \
+        -DCMAKE_INSTALL_RPATH={{ prefix }}/lib{% for a in cmake_args %} {{ a | shq }}{% endfor %} \
+    && cmake --build /src/build --parallel "$(nproc)" \
+    && cmake --install /src/build
+{% elif build_type == "make" %}
+RUN make -j"$(nproc)" PREFIX={{ prefix }} prefix={{ prefix }} \
+    && make install PREFIX={{ prefix }} prefix={{ prefix }}
+{% elif build_type == "rust-cargo" %}
+# --locked: build exactly the dependency versions recorded in the project's Cargo.lock
+RUN cargo install --locked --path . --root {{ prefix }}{% for a in cargo_args %} {{ a | shq }}{% endfor %}
+{% else %}
+RUN if [ ! -x configure ]; then autoreconf -fi; fi \
+    && ./configure --prefix={{ prefix }}{% for a in configure_args %} {{ a | shq }}{% endfor %} \
+    && make -j"$(nproc)" \
+    && make install
 {% endif %}
 
 # Strip debug symbols to reduce image size
 RUN if [ -d {{ prefix }}/bin ]; then \
-        strip {{ prefix }}/bin/* 2>/dev/null || true; \
+        find {{ prefix }}/bin -type f -exec strip --strip-unneeded {} + 2>/dev/null || true; \
     fi
+{% endif %}

@@ -14,28 +14,29 @@ Reproducibility guarantees:
 """
 
 import json
-from typing import Any, Dict, List, Optional, Tuple
+import re
 
 import yaml
 
-from capsid.models import BuildType, Recipe
-from capsid.sbom import generate_spdx_sbom
-from capsid.ro_crate import generate_ro_crate
 from capsid.exporter import export_nextflow_process, export_snakemake_rule
 from capsid.locking import pixi_manifest
+from capsid.models import NAME_PATTERN, VERSION_PATTERN, BuildType, Platform, Recipe
+from capsid.project import HUB_URL, VENDOR, VERSION
+from capsid.ro_crate import generate_ro_crate
+from capsid.sbom import generate_spdx_sbom
 from capsid.templating import render
 
 # Images pinned by digest (tag kept for readability). Update with:
 #   python scripts/bump_pins.py   (or: docker buildx imagetools inspect <image>:<tag>)
 # Dockerfile frontend (the `# syntax=` parser image) -- also part of the build input
-DOCKERFILE_FRONTEND = (
-    "docker/dockerfile:1.4@sha256:9ba7531bd80fb0a858632727cf7a112fbfd19b17e94c4e84ced81e24ef1a0dbc"
-)
-DEFAULT_DEBIAN_RUNTIME = (
-    "debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
-)
+DOCKERFILE_FRONTEND = "docker/dockerfile:1.4@sha256:9ba7531bd80fb0a858632727cf7a112fbfd19b17e94c4e84ced81e24ef1a0dbc"
+DEFAULT_DEBIAN_RUNTIME = "debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc"
 DEFAULT_PIXI_BUILDER = (
     "ghcr.io/prefix-dev/pixi:0.84.2@sha256:8201f134655a8261f382ee565ddf1498e5f215887bb14e812e1f47c09f4f7196"
+)
+# Rust toolchain for rust-cargo recipes (Debian bookworm, like the runtime)
+DEFAULT_RUST_BUILDER = (
+    "rust:1.100.0-slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37"
 )
 DEFAULT_UV_BUILDER = (
     "ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85"
@@ -57,7 +58,12 @@ DEBIAN_SUITE = "bookworm"
 DEFAULT_SOURCE_DATE_EPOCH = 1700000000
 
 VENV_PREFIX = "/opt/venv"
-CONDA_PREFIX = "/opt/conda-env"
+# Conda packages embed their absolute install prefix (shebangs, pkg-config files, compiled-in
+# paths), so the environment is installed at its final path and copied to the same path.
+PIXI_WORKSPACE = "/opt/pixi"
+CONDA_PREFIX = f"{PIXI_WORKSPACE}/.pixi/envs/default"
+# Stable, short alias of the conda environment in the runtime image
+CONDA_ENV_LINK = "/opt/conda-env"
 
 # Base PATH used in /etc/environment, which pam_env reads literally (no $PATH expansion).
 SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -71,6 +77,42 @@ RUNTIME_TEMPLATE = "dockerfile/runtime.j2"
 APT_SNAPSHOT_TEMPLATE = "dockerfile/apt_snapshot.j2"
 
 
+# apt packages every source builder needs, plus the toolchain of each strategy
+SOURCE_BASE_PACKAGES = ["ca-certificates", "curl", "tar", "gzip", "bzip2", "xz-utils"]
+SOURCE_TOOLCHAINS = {
+    BuildType.AUTOTOOLS: ["build-essential", "autoconf", "automake", "libtool", "pkg-config"],
+    BuildType.MAKE: ["build-essential", "pkg-config"],
+    BuildType.CMAKE: ["build-essential", "cmake", "pkg-config"],
+    BuildType.RUST_CARGO: ["build-essential", "pkg-config"],
+    BuildType.BINARY: ["unzip"],
+}
+# Docker TARGETARCH for each platform
+TARGET_ARCH = {Platform.LINUX_AMD64: "amd64", Platform.LINUX_ARM64: "arm64"}
+
+
+def binary_artefacts(recipe: Recipe) -> list[dict[str, str]]:
+    """[{arch, url, sha256}] for every platform of a binary recipe."""
+    b = recipe.build
+    by_arch = {
+        Platform.LINUX_AMD64: (b.binary_url_amd64, b.sha256_amd64),
+        Platform.LINUX_ARM64: (b.binary_url_arm64, b.sha256_arm64),
+    }
+    out = []
+    for platform in recipe.platforms:
+        url, sha = by_arch[platform]
+        arch = TARGET_ARCH[platform]
+        if not url:
+            raise ValueError(
+                f"Recipe '{recipe.name}': binary build for {platform.value} requires 'build.binary_url_{arch}'"
+            )
+        if not sha:
+            raise ValueError(
+                f"Recipe '{recipe.name}': refusing to install unverified binary '{url}'. Add 'build.sha256_{arch}'."
+            )
+        out.append({"arch": arch, "url": url, "sha256": sha})
+    return out
+
+
 def python_image(version: str) -> str:
     """Digest-pinned python:X-slim-bookworm image for a Python version."""
     try:
@@ -82,7 +124,7 @@ def python_image(version: str) -> str:
         ) from None
 
 
-def apt_setup(snapshot: Optional[str], base_overridden: bool) -> str:
+def apt_setup(snapshot: str | None, base_overridden: bool) -> str:
     """apt snapshot snippet; empty for custom base images or snapshot='latest'."""
     if base_overridden or snapshot == "latest":
         return ""
@@ -92,17 +134,18 @@ def apt_setup(snapshot: Optional[str], base_overridden: bool) -> str:
 def render_dockerfile(
     *,
     header: str,
-    builders: List[str],
+    builders: list[str],
     runtime_base: str,
     source_date_epoch: int,
-    run_deps: List[str],
-    path_dirs: List[str],
-    copies: List[Tuple[str, str, str]],
-    provenance_copies: List[Tuple[str, str, str]],
-    labels: List[Tuple[str, str]],
+    run_deps: list[str],
+    path_dirs: list[str],
+    copies: list[tuple[str, str, str]],
+    provenance_copies: list[tuple[str, str, str]],
+    labels: list[tuple[str, str]],
     apt: str,
-    fair_assets: Optional[List[Dict[str, str]]] = None,
-    extra_env: Optional[Dict[str, str]] = None,
+    fair_assets: list[dict[str, str]] | None = None,
+    extra_env: dict[str, str] | None = None,
+    links: list[tuple[str, str]] | None = None,
 ) -> str:
     """Assemble builder stage(s) + the shared hardened runtime stage."""
     runtime = render(
@@ -118,6 +161,7 @@ def render_dockerfile(
         provenance_copies=provenance_copies,
         fair_assets=fair_assets or [],
         extra_env=sorted((extra_env or {}).items()),
+        links=links or [],
         labels=labels,
     )
     parts = [f"# syntax={DOCKERFILE_FRONTEND}\n" + header.rstrip() + "\n"]
@@ -126,32 +170,40 @@ def render_dockerfile(
     return "\n".join(parts)
 
 
-def _fair_assets(recipe: Recipe) -> List[Dict[str, str]]:
+def _fair_assets(recipe: Recipe) -> list[dict[str, str]]:
     recipe_yaml = yaml.dump(recipe.model_dump(mode="json", exclude_none=True), sort_keys=False).strip()
     return [
         {"marker": "EOF_RECIPE", "filename": "recipe.yaml", "content": recipe_yaml},
-        {"marker": "EOF_SBOM", "filename": "sbom.spdx.json",
-         "content": json.dumps(generate_spdx_sbom(recipe), indent=2)},
-        {"marker": "EOF_ROCRATE", "filename": "ro-crate-metadata.json",
-         "content": json.dumps(generate_ro_crate(recipe), indent=2)},
+        {
+            "marker": "EOF_SBOM",
+            "filename": "sbom.spdx.json",
+            "content": json.dumps(generate_spdx_sbom(recipe), indent=2),
+        },
+        {
+            "marker": "EOF_ROCRATE",
+            "filename": "ro-crate-metadata.json",
+            "content": json.dumps(generate_ro_crate(recipe), indent=2),
+        },
         {"marker": "EOF_NF", "filename": "module.nf", "content": export_nextflow_process(recipe).strip()},
         {"marker": "EOF_SMK", "filename": "rule.smk", "content": export_snakemake_rule(recipe).strip()},
     ]
 
 
-def _recipe_labels(recipe: Recipe) -> List[Tuple[str, str]]:
-    labels: List[Tuple[str, str]] = [
+def _recipe_labels(recipe: Recipe) -> list[tuple[str, str]]:
+    labels: list[tuple[str, str]] = [
         ("org.opencontainers.image.title", recipe.name),
         ("org.opencontainers.image.version", recipe.version),
         ("org.opencontainers.image.description", recipe.description or ""),
         ("org.opencontainers.image.url", recipe.homepage or ""),
         ("org.opencontainers.image.licenses", recipe.license or "UNKNOWN"),
-        ("org.opencontainers.image.vendor", "Capsid Project"),
+        ("org.opencontainers.image.vendor", VENDOR),
+        # GHCR links the package to this repository (and its permissions) through this label
+        ("org.opencontainers.image.source", HUB_URL),
     ]
     if recipe.doi:
         labels.append(("org.opencontainers.image.doi", recipe.doi))
     labels += [
-        ("io.capsid.version", "0.1.0"),
+        ("io.capsid.version", VERSION),
         ("io.capsid.engine", recipe.build.type.value),
         ("io.capsid.fair.ro_crate", "/etc/capsid/ro-crate-metadata.json"),
         ("io.capsid.fair.sbom", "/etc/capsid/sbom.spdx.json"),
@@ -171,9 +223,23 @@ def _recipe_labels(recipe: Recipe) -> List[Tuple[str, str]]:
     return labels
 
 
+def check_identity(name: str, version: str, base_image: str | None = None) -> None:
+    """
+    Name, version and base image are written into the Dockerfile and image references unquoted.
+    The model accepts any string (so `capsid lint` can report E005/E006 precisely); rendering does not.
+    """
+    if not re.fullmatch(NAME_PATTERN, name):
+        raise ValueError(f"'{name}' is not a valid recipe name ({NAME_PATTERN})")
+    if not re.fullmatch(VERSION_PATTERN, str(version)):
+        raise ValueError(f"'{version}' is not a valid version ({VERSION_PATTERN})")
+    if base_image is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]*", base_image):
+        raise ValueError(f"'{base_image}' is not a valid image reference")
+
+
 def generate_dockerfile(recipe: Recipe) -> str:
     """Render the optimized, hardened, FAIR Dockerfile for a single recipe."""
     b = recipe.build
+    check_identity(recipe.name, recipe.version, b.base_image)
     python_version = b.python_version or DEFAULT_PYTHON_VERSION
     if b.base_image:
         runtime_base = b.base_image
@@ -186,22 +252,26 @@ def generate_dockerfile(recipe: Recipe) -> str:
     build_deps = list(b.dependencies.get("build", []))
     run_deps = list(b.dependencies.get("run", []))
 
+    links: list[tuple[str, str]] = []
+    env: dict[str, str] = {}
     if b.type == BuildType.UV_PYPI:
         if not b.package:
             raise ValueError(f"Recipe '{recipe.name}': uv-pypi builds require 'build.package'")
         header = "# Multi-stage hardened Python container generated by Capsid (uv)"
-        builders = [render(
-            UV_BUILDER_TEMPLATE,
-            uv_builder=DEFAULT_UV_BUILDER,
-            builder_base=runtime_base,
-            source_date_epoch=sde,
-            apt_setup=apt,
-            venv_prefix=VENV_PREFIX,
-            python_version=python_version,
-            build_deps=build_deps,
-            pypi_packages=[b.package],
-            requirements_lock=recipe.requirements_lock,
-        )]
+        builders = [
+            render(
+                UV_BUILDER_TEMPLATE,
+                uv_builder=DEFAULT_UV_BUILDER,
+                builder_base=runtime_base,
+                source_date_epoch=sde,
+                apt_setup=apt,
+                venv_prefix=VENV_PREFIX,
+                python_version=python_version,
+                build_deps=build_deps,
+                pypi_packages=[b.package],
+                requirements_lock=recipe.requirements_lock,
+            )
+        ]
         path_dirs = [f"{VENV_PREFIX}/bin"]
         copies = [("python_builder", VENV_PREFIX, VENV_PREFIX)]
         provenance = [("python_builder", "/requirements.lock", "/etc/capsid/requirements.lock")]
@@ -209,43 +279,64 @@ def generate_dockerfile(recipe: Recipe) -> str:
     elif b.type == BuildType.PIXI_CONDA:
         if not b.conda_packages:
             raise ValueError(f"Recipe '{recipe.name}': pixi-conda builds require 'build.conda_packages'")
-        header = "# Multi-stage hardened Conda container generated by Capsid via Pixi (Rust)"
+        header = "# Multi-stage hardened Conda container generated by Capsid via pixi"
         channels = b.channels or ["conda-forge", "bioconda"]
-        builders = [render(
-            PIXI_BUILDER_TEMPLATE,
-            pixi_builder=DEFAULT_PIXI_BUILDER,
-            source_date_epoch=sde,
-            channels=channels,
-            conda_packages=b.conda_packages,
-            pixi_lock=recipe.pixi_lock,
-            pixi_manifest=pixi_manifest(recipe.name, channels, b.conda_packages, recipe.platforms),
-        )]
+        builders = [
+            render(
+                PIXI_BUILDER_TEMPLATE,
+                pixi_builder=DEFAULT_PIXI_BUILDER,
+                workspace=PIXI_WORKSPACE,
+                source_date_epoch=sde,
+                channels=channels,
+                conda_packages=b.conda_packages,
+                pixi_lock=recipe.pixi_lock,
+                pixi_manifest=pixi_manifest(recipe.name, channels, b.conda_packages, recipe.platforms),
+            )
+        ]
         path_dirs = [f"{CONDA_PREFIX}/bin"]
-        copies = [("pixi_builder", "/build/.pixi/envs/default", CONDA_PREFIX)]
-        provenance = [("pixi_builder", "/build/pixi.lock", "/etc/capsid/pixi.lock")]
+        copies = [("pixi_builder", CONDA_PREFIX, CONDA_PREFIX)]
+        links = [(CONDA_PREFIX, CONDA_ENV_LINK)]
+        env = {"CONDA_PREFIX": CONDA_PREFIX}
+        provenance = [("pixi_builder", f"{PIXI_WORKSPACE}/pixi.lock", "/etc/capsid/pixi.lock")]
 
     else:
-        if not b.source:
-            raise ValueError(f"Recipe '{recipe.name}': {b.type.value} builds require 'build.source'")
-        if not b.sha256:
-            raise ValueError(
-                f"Recipe '{recipe.name}': refusing to build unverified source '{b.source}'. "
-                "Add 'build.sha256'."
-            )
         prefix = b.install_prefix or f"/opt/{recipe.name}"
-        header = "# Multi-stage compilation container generated by Capsid"
-        builders = [render(
-            SOURCE_BUILDER_TEMPLATE,
-            builder_base=runtime_base,
-            source_date_epoch=sde,
-            apt_setup=apt,
-            build_deps=build_deps,
-            source=b.source,
-            sha256=b.sha256,
-            prefix=prefix,
-            build_commands=b.build_commands or [],
-            configure_args=b.configure_args or [],
-        )]
+        binaries: list[dict[str, str]] = []
+        if b.type == BuildType.BINARY:
+            binaries = binary_artefacts(recipe)
+            header = "# Hardened container for a precompiled, checksum-verified binary generated by Capsid"
+        else:
+            if not b.source:
+                raise ValueError(f"Recipe '{recipe.name}': {b.type.value} builds require 'build.source'")
+            if not b.sha256:
+                raise ValueError(
+                    f"Recipe '{recipe.name}': refusing to build unverified source '{b.source}'. Add 'build.sha256'."
+                )
+            header = "# Multi-stage compilation container generated by Capsid"
+        if b.type == BuildType.RUST_CARGO:
+            builder_base = DEFAULT_RUST_BUILDER
+            builder_apt = apt_setup(b.apt_snapshot, base_overridden=False)
+        else:
+            builder_base, builder_apt = runtime_base, apt
+        builders = [
+            render(
+                SOURCE_BUILDER_TEMPLATE,
+                build_type=b.type.value,
+                tool_name=recipe.name,
+                builder_base=builder_base,
+                source_date_epoch=sde,
+                apt_setup=builder_apt,
+                apt_packages=list(dict.fromkeys(SOURCE_BASE_PACKAGES + SOURCE_TOOLCHAINS[b.type] + build_deps)),
+                source=b.source or "",
+                sha256=b.sha256 or "",
+                binaries=binaries,
+                prefix=prefix,
+                build_commands=b.build_commands or [],
+                configure_args=b.configure_args or [],
+                cmake_args=b.cmake_args or [],
+                cargo_args=b.cargo_args,
+            )
+        ]
         path_dirs = [f"{prefix}/bin"]
         copies = [("source_builder", prefix, prefix)]
         provenance = []
@@ -262,5 +353,6 @@ def generate_dockerfile(recipe: Recipe) -> str:
         labels=_recipe_labels(recipe),
         apt=apt,
         fair_assets=_fair_assets(recipe),
-        extra_env=b.env,
+        extra_env={**env, **b.env},
+        links=links,
     )

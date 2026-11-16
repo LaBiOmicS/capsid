@@ -6,8 +6,9 @@ from capsid.builders.runner import publish_command
 
 
 def test_docker_publish_is_multiarch_and_reproducible():
-    [cmd] = publish_command("docker", Path("ctx/Dockerfile"), Path("ctx"), "ghcr.io/o/tool:1.0",
-                            ["linux/amd64", "linux/arm64"], 1700000000)
+    [cmd] = publish_command(
+        "docker", Path("ctx/Dockerfile"), Path("ctx"), "ghcr.io/o/tool:1.0", ["linux/amd64", "linux/arm64"], 1700000000
+    )
     assert cmd[:3] == ["docker", "buildx", "build"]
     assert cmd[cmd.index("--platform") + 1] == "linux/amd64,linux/arm64"
     assert "SOURCE_DATE_EPOCH=1700000000" in cmd
@@ -18,8 +19,7 @@ def test_docker_publish_is_multiarch_and_reproducible():
 
 
 def test_podman_publish_builds_manifest_then_pushes_all():
-    build, push = publish_command("podman", Path("ctx/Dockerfile"), Path("ctx"), "reg/t:1",
-                                  ["linux/amd64"], 42)
+    build, push = publish_command("podman", Path("ctx/Dockerfile"), Path("ctx"), "reg/t:1", ["linux/amd64"], 42)
     assert "--rewrite-timestamp" in build
     assert build[build.index("--source-date-epoch") + 1] == "42"
     assert build[build.index("--manifest") + 1] == "reg/t:1"

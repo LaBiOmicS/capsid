@@ -17,8 +17,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 from capsid.models import Platform, Recipe, StackRecipe
 
@@ -33,7 +33,7 @@ CONDA_PLATFORMS = {
 _SPEC_RE = re.compile(r"^\s*(?:(?P<channel>[A-Za-z0-9_.\-]+)::)?(?P<name>[A-Za-z0-9_.\-]+)\s*(?P<version>.*?)\s*$")
 
 
-def conda_spec_to_pixi(spec: str) -> Tuple[str, str]:
+def conda_spec_to_pixi(spec: str) -> tuple[str, str]:
     """Convert a conda match spec ('samtools==1.25', 'bwa=0.7.19', 'bioconda::x') to a pixi.toml entry."""
     m = _SPEC_RE.match(spec)
     if not m:
@@ -45,7 +45,7 @@ def conda_spec_to_pixi(spec: str) -> Tuple[str, str]:
         # conda '=1.2' means '1.2.*'
         version = version[1:] if version.endswith("*") else version[1:] + ".*"
     if channel:
-        value = "{ version = %s, channel = %s }" % (json.dumps(version), json.dumps(channel))
+        value = f"{{ version = {json.dumps(version)}, channel = {json.dumps(channel)} }}"
     else:
         value = json.dumps(version)
     return name, value
@@ -76,7 +76,8 @@ def requirements_in(packages: Sequence[str]) -> str:
 # Lock file discovery
 # ---------------------------------------------------------------------------
 
-def lock_paths(definition: Path) -> Tuple[Path, Path]:
+
+def lock_paths(definition: Path) -> tuple[Path, Path]:
     """Return (pixi.lock path, requirements.lock path) for a recipe.yaml or stack.yaml."""
     if definition.name == "recipe.yaml":
         return definition.parent / PIXI_LOCK, definition.parent / REQUIREMENTS_LOCK
@@ -84,7 +85,7 @@ def lock_paths(definition: Path) -> Tuple[Path, Path]:
     return definition.parent / f"{stem}.{PIXI_LOCK}", definition.parent / f"{stem}.{REQUIREMENTS_LOCK}"
 
 
-def attach_lockfiles(model: Union[Recipe, StackRecipe], definition: Path) -> Union[Recipe, StackRecipe]:
+def attach_lockfiles(model: Recipe | StackRecipe, definition: Path) -> Recipe | StackRecipe:
     """Load sibling lock files (if present) into the model."""
     pixi_path, req_path = lock_paths(definition)
     if pixi_path.is_file():
@@ -98,23 +99,39 @@ def attach_lockfiles(model: Union[Recipe, StackRecipe], definition: Path) -> Uni
 # Lock generation (runs the pinned solver images)
 # ---------------------------------------------------------------------------
 
-def _container_cmd(engine: str, image: str, workdir: Path, args: List[str]) -> List[str]:
-    cmd = [engine, "run", "--rm", "-v", f"{workdir}:/w", "-w", "/w",
-           "-e", "HOME=/w/.home", "-e", "PIXI_CACHE_DIR=/w/.cache/pixi", "-e", "UV_CACHE_DIR=/w/.cache/uv"]
+
+def _container_cmd(engine: str, image: str, workdir: Path, args: list[str]) -> list[str]:
+    cmd = [
+        engine,
+        "run",
+        "--rm",
+        "-v",
+        f"{workdir}:/w",
+        "-w",
+        "/w",
+        "-e",
+        "HOME=/w/.home",
+        "-e",
+        "PIXI_CACHE_DIR=/w/.cache/pixi",
+        "-e",
+        "UV_CACHE_DIR=/w/.cache/uv",
+    ]
     if engine == "docker" and hasattr(os, "getuid"):
         cmd += ["--user", f"{os.getuid()}:{os.getgid()}"]
-    return cmd + [image] + args
+    return [*cmd, image, *args]
 
 
-def _run(cmd: List[str]) -> None:
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+def _run(cmd: list[str]) -> None:
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
     if res.returncode != 0:
         raise RuntimeError(f"Lock command failed ({res.returncode}): {' '.join(cmd)}\n{res.stdout[-4000:]}")
 
 
-def lock_conda(name: str, channels: Sequence[str], packages: Sequence[str],
-               platforms: Iterable[Platform], engine: str) -> str:
+def lock_conda(
+    name: str, channels: Sequence[str], packages: Sequence[str], platforms: Iterable[Platform], engine: str
+) -> str:
     from capsid.builders.dockerfile_gen import DEFAULT_PIXI_BUILDER
+
     with tempfile.TemporaryDirectory(prefix="capsid-lock-") as tmp:
         work = Path(tmp)
         os.chmod(work, 0o777)
@@ -127,28 +144,44 @@ def lock_pypi(packages: Sequence[str], python_version: str, engine: str) -> str:
     """Compile a hashed, universal requirements.lock with the pinned uv binary,
     running inside the same pinned python image the build uses."""
     from capsid.builders.dockerfile_gen import DEFAULT_UV_BUILDER, python_image
+
     with tempfile.TemporaryDirectory(prefix="capsid-lock-") as tmp:
         work = Path(tmp)
         os.chmod(work, 0o777)
         # Extract /uv from the digest-pinned uv image (it is distroless: no shell, no libc)
-        cid = subprocess.run([engine, "create", DEFAULT_UV_BUILDER, "/uv"],
-                             capture_output=True, text=True, check=True).stdout.strip()
+        cid = subprocess.run(
+            [engine, "create", DEFAULT_UV_BUILDER, "/uv"], capture_output=True, text=True, check=True
+        ).stdout.strip()
         try:
             _run([engine, "cp", f"{cid}:/uv", str(work / "uv")])
         finally:
-            subprocess.run([engine, "rm", "-f", cid], capture_output=True)
+            subprocess.run([engine, "rm", "-f", cid], capture_output=True, check=False)
         (work / "requirements.in").write_text(requirements_in(packages))
-        _run(_container_cmd(engine, python_image(python_version), work, [
-            "/w/uv", "pip", "compile", "requirements.in",
-            "--universal", "--generate-hashes",
-            "--python-version", python_version,
-            "--custom-compile-command", "capsid lock",
-            "-o", REQUIREMENTS_LOCK,
-        ]))
+        _run(
+            _container_cmd(
+                engine,
+                python_image(python_version),
+                work,
+                [
+                    "/w/uv",
+                    "pip",
+                    "compile",
+                    "requirements.in",
+                    "--universal",
+                    "--generate-hashes",
+                    "--python-version",
+                    python_version,
+                    "--custom-compile-command",
+                    "capsid lock",
+                    "-o",
+                    REQUIREMENTS_LOCK,
+                ],
+            )
+        )
         return (work / REQUIREMENTS_LOCK).read_text()
 
 
-def write_locks(definition: Path, pixi_lock: Optional[str], requirements_lock: Optional[str]) -> List[Path]:
+def write_locks(definition: Path, pixi_lock: str | None, requirements_lock: str | None) -> list[Path]:
     """Write lock contents next to the definition file; remove stale ones."""
     pixi_path, req_path = lock_paths(definition)
     written = []

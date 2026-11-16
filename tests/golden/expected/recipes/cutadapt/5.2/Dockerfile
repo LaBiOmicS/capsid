@@ -350,10 +350,9 @@ zlib-ng==1.1.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or
     # via xopen
 EOF_REQUIREMENTS_LOCK
 
-RUN uv pip install --no-cache --require-hashes -r /build/requirements.lock
-
-# Record the fully resolved dependency set for provenance and rebuilds
-RUN uv pip freeze > /requirements.lock
+# The installed set is recorded in /requirements.lock for provenance and rebuilds
+RUN uv pip install --no-cache --require-hashes -r /build/requirements.lock \
+    && uv pip freeze > /requirements.lock
 
 # ---- Runtime: hardened, non-root, tini as PID 1, HPC & workflow-engine ready ----
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS runtime
@@ -391,19 +390,21 @@ RUN groupadd -r -g 1000 bio && \
     mkdir -p /scratch /data /work /lustre /shared /tmp /home/bio && \
     chmod 1777 /tmp /scratch /data /work /lustre /shared
 
-# PATH for login shells (profile.d) and PAM sessions (/etc/environment is not expanded)
+# PATH for login shells (profile.d) and PAM sessions (/etc/environment is not expanded);
+# single quotes are intended: ${PATH:-} must be expanded at login, not at build time
+# hadolint ignore=SC2016
 RUN echo 'export PATH="/opt/venv/bin:${PATH:-}"' > /etc/profile.d/capsid.sh && \
     chmod 0644 /etc/profile.d/capsid.sh && \
     echo 'PATH="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' >> /etc/environment
 
 # Tool prefixes are owned by root: readable and executable by bio, not writable
 COPY --from=python_builder /opt/venv /opt/venv
-RUN chmod -R a+rX /opt/venv
+RUN chmod -R a+rX /opt/venv && \
+    mkdir -p /etc/capsid
 
 # -------------------------------------------------------------
 # FAIR & provenance assets (/etc/capsid/)
 # -------------------------------------------------------------
-RUN mkdir -p /etc/capsid
 COPY --from=python_builder /requirements.lock /etc/capsid/requirements.lock
 
 COPY <<'EOF_RECIPE' /etc/capsid/recipe.yaml
@@ -432,6 +433,7 @@ build:
   - bioconda
   configure_args: []
   cmake_args: []
+  cargo_args: []
   build_commands: []
   dependencies:
     build:
@@ -443,6 +445,7 @@ test:
   command: python -c 'import cutadapt; print("cutadapt OK")'
   expected_output: cutadapt OK
   expected_exit_code: 0
+  timeout: 60
   files: {}
 labels: {}
 EOF_RECIPE
@@ -452,41 +455,202 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Capsid-SBOM-cutadapt-5.2",
+  "name": "capsid-sbom-cutadapt-5.2",
   "documentNamespace": "https://github.com/LaBiOmicS/capsid-hub/sbom/cutadapt/5.2",
   "creationInfo": {
     "created": "2023-11-14T22:13:20Z",
     "creators": [
-      "Tool: Capsid Engine-0.1.0",
+      "Tool: capsid-0.1.0",
       "Organization: LaBiOmicS Capsid Project"
     ]
   },
   "packages": [
     {
-      "SPDXID": "SPDXRef-Package-cutadapt-5-2",
+      "SPDXID": "SPDXRef-Package-cutadapt-5.2",
       "name": "cutadapt",
       "versionInfo": "5.2",
       "downloadLocation": "https://pypi.org/project/cutadapt/",
-      "licenseConcluded": "MIT",
+      "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
-      "supplier": "Organization: LaBiOmicS Capsid Project (https://github.com/LaBiOmicS/capsid-hub)",
-      "description": "Adapter trimming and other preprocessing of high-throughput sequencing reads",
-      "filesAnalyzed": false
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "description": "Adapter trimming and other preprocessing of high-throughput sequencing reads"
     },
     {
-      "SPDXID": "SPDXRef-Package-pypi-cutadapt",
+      "SPDXID": "SPDXRef-Package-pypi-backports-zstd-1.8.0",
+      "name": "backports-zstd",
+      "versionInfo": "1.8.0",
+      "downloadLocation": "https://pypi.org/project/backports-zstd/1.8.0/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/backports-zstd@1.8.0"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "029bca2385ebb4355135bdb8559792d2768ae19707705eea84e68c42a30a0276"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pypi-cutadapt-5.2",
       "name": "cutadapt",
       "versionInfo": "5.2",
-      "downloadLocation": "https://pypi.org/project/cutadapt/",
-      "licenseConcluded": "MIT",
-      "filesAnalyzed": false
+      "downloadLocation": "https://pypi.org/project/cutadapt/5.2/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/cutadapt@5.2"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "013a0b0f8e7c4231bf630987006d0232cd3ea18d3f48c81039c375331ef9607e"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pypi-dnaio-1.2.5",
+      "name": "dnaio",
+      "versionInfo": "1.2.5",
+      "downloadLocation": "https://pypi.org/project/dnaio/1.2.5/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/dnaio@1.2.5"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "0b34df8363d41af88317bdccdefb96995848430d25535b045cb2a881e48c7ad2"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pypi-isal-1.9.1",
+      "name": "isal",
+      "versionInfo": "1.9.1",
+      "downloadLocation": "https://pypi.org/project/isal/1.9.1/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/isal@1.9.1"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "0646bbf6f95bf440971b0dca81f008c5cd539db1dd252fb3eff9716128588c2f"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pypi-xopen-2.1.0",
+      "name": "xopen",
+      "versionInfo": "2.1.0",
+      "downloadLocation": "https://pypi.org/project/xopen/2.1.0/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/xopen@2.1.0"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "06584821588f813563863b63d5e02568a4328661b7507ea38c432f24c69ea4b7"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pypi-zlib-ng-1.1.0",
+      "name": "zlib-ng",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "https://pypi.org/project/zlib-ng/1.1.0/",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "filesAnalyzed": false,
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/zlib-ng@1.1.0"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "0514747763306d02bedeb513c2743df2700ec3145a275b372a7f3c1d1220dd27"
+        }
+      ]
     }
   ],
   "relationships": [
     {
       "spdxElementId": "SPDXRef-DOCUMENT",
       "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-Package-cutadapt-5-2"
+      "relatedSpdxElement": "SPDXRef-Package-cutadapt-5.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-backports-zstd-1.8.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-cutadapt-5.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-dnaio-1.2.5"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-isal-1.9.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-xopen-2.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-cutadapt-5.2",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-pypi-zlib-ng-1.1.0"
     }
   ]
 }
@@ -682,7 +846,8 @@ LABEL org.opencontainers.image.title="cutadapt" \
       org.opencontainers.image.description="Adapter trimming and other preprocessing of high-throughput sequencing reads" \
       org.opencontainers.image.url="https://pypi.org/project/cutadapt/" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.vendor="Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="uv-pypi" \
       io.capsid.fair.ro_crate="/etc/capsid/ro-crate-metadata.json" \

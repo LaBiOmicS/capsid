@@ -14,18 +14,19 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Refresh digests (same tags) and DEFAULT_APT_SNAPSHOT
         id: bump
         run: |
           python3 scripts/bump_pins.py | tee "$RUNNER_TEMP/changes.txt"
+          # shellcheck disable=SC2016  # the backticks are Markdown, not command substitution
           {
             echo 'Weekly refresh by `scripts/bump_pins.py` (same tags, new digests; apt snapshot = today).'
             echo 'Unit tests and locked smoke builds (seqkit via pixi, cutadapt via uv, with container tests) passed with the new pins.'
@@ -50,7 +51,7 @@ jobs:
 
       - name: Open pull request
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: bot/bump-pins

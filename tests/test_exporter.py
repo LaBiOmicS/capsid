@@ -2,13 +2,8 @@
 Unit tests for Nextflow, Snakemake, and SIF exporters.
 """
 
-from capsid.models import Recipe, BuildConfig, BuildType, TestConfig
-from capsid.exporter import (
-    export_nextflow_process,
-    export_nextflow_config,
-    export_snakemake_rule,
-    export_apptainer_def
-)
+from capsid.exporter import export_apptainer_def, export_nextflow_config, export_nextflow_process, export_snakemake_rule
+from capsid.models import BuildConfig, BuildType, Recipe, TestConfig
 
 
 def get_sample_recipe() -> Recipe:
@@ -16,11 +11,8 @@ def get_sample_recipe() -> Recipe:
         name="samtools",
         version="1.25",
         description="Tools for SAM/BAM",
-        build=BuildConfig(
-            type=BuildType.PIXI_CONDA,
-            conda_packages=["samtools==1.25"]
-        ),
-        test=TestConfig(command="samtools --version")
+        build=BuildConfig(type=BuildType.PIXI_CONDA, conda_packages=["samtools==1.25"]),
+        test=TestConfig(command="samtools --version"),
     )
 
 
@@ -32,7 +24,7 @@ def test_export_nextflow_process():
     assert "oras://" not in nf
     assert "ghcr.io/labiomics/capsid/samtools:1.25" in nf
     assert "versions.yml" in nf
-    assert "samtools: \"1.25\"" in nf
+    assert 'samtools: "1.25"' in nf
 
 
 def test_export_snakemake_rule():
@@ -54,7 +46,7 @@ def test_export_nextflow_config():
     assert "docker {" in cfg
     assert "slurm {" in cfg
     assert "withName: 'SAMTOOLS' {" in cfg
-    assert "container = 'ghcr.io/labiomics/capsid/samtools:1.25'" in cfg
+    assert "container     = 'ghcr.io/labiomics/capsid/samtools:1.25'" in cfg
 
 
 def test_export_apptainer_def():

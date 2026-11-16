@@ -4,13 +4,19 @@ GitHub Scaffolder: inspects GitHub repositories and releases to generate build r
 
 import hashlib
 import re
-from typing import Optional, Tuple
+
 import httpx
 
-from capsid.models import Recipe, BuildConfig, BuildType, TestConfig, Platform
+from capsid.models import BuildConfig, BuildType, Platform, Recipe, TestConfig
+
+# Release asset names that denote a prebuilt binary rather than a source archive
+BINARY_ASSET_RE = re.compile(
+    r"(x86[_-]64|amd64|aarch64|arm64|armv7|i[3-6]86|linux|darwin|macos|osx|windows|win(32|64)|musl|gnu|apple)",
+    re.IGNORECASE,
+)
 
 
-def parse_github_repo(input_str: str) -> Tuple[str, str]:
+def parse_github_repo(input_str: str) -> tuple[str, str]:
     """Parse 'owner/repo' or 'https://github.com/owner/repo'."""
     clean = input_str.strip().rstrip("/")
     if "github.com/" in clean:
@@ -34,7 +40,7 @@ def compute_sha256(url: str, client: httpx.Client) -> str:
     return hasher.hexdigest()
 
 
-def scaffold_from_github(input_str: str, version: Optional[str] = None) -> Recipe:
+def scaffold_from_github(input_str: str, version: str | None = None) -> Recipe:
     """Inspect GitHub repository and generate an automated recipe."""
     owner, repo = parse_github_repo(input_str)
     headers = {"User-Agent": "capsid-scaffolder/1.0", "Accept": "application/vnd.github.v3+json"}
@@ -50,41 +56,47 @@ def scaffold_from_github(input_str: str, version: Optional[str] = None) -> Recip
         license_dict = repo_data.get("license") or {}
         spdx_license = license_dict.get("spdx_id") or "UNKNOWN"
 
-        # 2. Fetch release or tag
-        rel_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
-        rel_resp = client.get(rel_url)
+        # 2. Fetch the requested release (or the latest one), falling back to tags
         tag_name = None
         tarball_url = None
         sha256_hash = None
-        release_assets = []
+        candidates = [f"releases/tags/{version}", f"releases/tags/v{version}"] if version else ["releases/latest"]
+        rel_data = None
+        for path in candidates:
+            rel_resp = client.get(f"https://api.github.com/repos/{owner}/{repo}/{path}")
+            if rel_resp.status_code == 200:
+                rel_data = rel_resp.json()
+                break
 
-        if rel_resp.status_code == 200:
-            rel_data = rel_resp.json()
+        if rel_data:
             tag_name = rel_data.get("tag_name", "")
-            release_assets = rel_data.get("assets", [])
-            # Prefer official release tarball if attached in assets
-            for asset in release_assets:
+            # Prefer an official *source* tarball attached as an asset (e.g. samtools-1.21.tar.bz2);
+            # assets named after a platform are prebuilt binaries, not sources
+            for asset in rel_data.get("assets", []):
                 name = asset.get("name", "")
-                if name.endswith(".tar.bz2") or name.endswith(".tar.gz"):
+                if name.endswith((".tar.bz2", ".tar.gz", ".tar.xz")) and not BINARY_ASSET_RE.search(name):
                     tarball_url = asset.get("browser_download_url")
                     break
-            if not tarball_url:
-                tarball_url = rel_data.get("tarball_url")
         else:
-            # Fallback to tags
             tags_resp = client.get(f"https://api.github.com/repos/{owner}/{repo}/tags")
-            if tags_resp.status_code == 200 and tags_resp.json():
-                tag_name = tags_resp.json()[0].get("name", "v1.0.0")
-                tarball_url = f"https://github.com/{owner}/{repo}/archive/refs/tags/{tag_name}.tar.gz"
+            tags = [t.get("name", "") for t in tags_resp.json()] if tags_resp.status_code == 200 else []
+            if version:
+                tag_name = next((t for t in tags if t in (version, f"v{version}")), None)
+                if not tag_name:
+                    raise ValueError(f"No release or tag '{version}' found in {owner}/{repo}")
+            elif tags:
+                tag_name = tags[0]
+        if tag_name and not tarball_url:
+            tarball_url = f"https://github.com/{owner}/{repo}/archive/refs/tags/{tag_name}.tar.gz"
 
-        # Clean version string (remove leading 'v' if present)
-        clean_version = tag_name.lstrip("v") if tag_name else "1.0.0"
+        clean_version = tag_name.lstrip("v") if tag_name else (version or "1.0.0")
 
-        # Calculate sha256 if tarball_url found
+        # Checksum of the exact archive the build will download (left empty if unreachable:
+        # `capsid lint` then reports E011 and the build refuses to run)
         if tarball_url:
             try:
                 sha256_hash = compute_sha256(tarball_url, client)
-            except Exception:
+            except (ValueError, httpx.HTTPError):
                 sha256_hash = None
 
         # 3. Detect build system by inspecting root files
@@ -101,7 +113,15 @@ def scaffold_from_github(input_str: str, version: Optional[str] = None) -> Recip
             test_cmd = f"{repo.lower()} --version"
         elif "configure.ac" in root_files or "configure" in root_files:
             build_type = BuildType.AUTOTOOLS
-            build_deps = ["build-essential", "ca-certificates", "curl", "zlib1g-dev", "libbz2-dev", "liblzma-dev", "libncurses5-dev"]
+            build_deps = [
+                "build-essential",
+                "ca-certificates",
+                "curl",
+                "zlib1g-dev",
+                "libbz2-dev",
+                "liblzma-dev",
+                "libncurses5-dev",
+            ]
             run_deps = ["zlib1g", "libbz2-1.0", "liblzma5", "libncurses6"]
             test_cmd = f"{repo.lower()} --version"
         elif "CMakeLists.txt" in root_files:
@@ -130,13 +150,7 @@ def scaffold_from_github(input_str: str, version: Optional[str] = None) -> Recip
         categories=["bioinformatics", "genomics"],
         platforms=[Platform.LINUX_AMD64, Platform.LINUX_ARM64],
         build=BuildConfig(
-            type=build_type,
-            source=tarball_url,
-            sha256=sha256_hash,
-            dependencies={"build": build_deps, "run": run_deps}
+            type=build_type, source=tarball_url, sha256=sha256_hash, dependencies={"build": build_deps, "run": run_deps}
         ),
-        test=TestConfig(
-            command=test_cmd,
-            expected_output=None
-        )
+        test=TestConfig(command=test_cmd, expected_output=None),
     )

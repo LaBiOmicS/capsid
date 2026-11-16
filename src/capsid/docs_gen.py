@@ -5,13 +5,12 @@ with instant search, category filters, and 1-click Nextflow and Snakemake snippe
 """
 
 import json
-from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from capsid.project import REGISTRY
 
 
-def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
+def generate_catalog_markdown(catalog_data: dict[str, Any]) -> str:
     """Generate GitHub-friendly Markdown catalog table and documentation."""
     tools = catalog_data.get("tools", {})
     total_recipes = catalog_data.get("total_recipes", 0)
@@ -22,10 +21,11 @@ def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
         "",
         "> Ultra-slim, hardened, rootless scientific containers ready for Docker, Apptainer/Singularity, Nextflow, and Snakemake.",
         "",
-        f"**Indexed Tools:** {total_tools} | **Total Recipes/Versions:** {total_recipes} | **Specification:** GA4GH TRS v2.0.1 Ready",
+        f"**Tools:** {total_tools} | **Versions:** {total_recipes} | "
+        "**Images:** multi-architecture, Cosign-signed, with SPDX SBOM and SLSA provenance",
         "",
         "| Tool | Versions | Engine | Target Architectures | License | Description | Nextflow Snippet | Snakemake Snippet |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
     for tool_name, data in sorted(tools.items()):
@@ -40,38 +40,42 @@ def generate_catalog_markdown(catalog_data: Dict[str, Any]) -> str:
         nf_cmd = f"`capsid export nextflow {tool_name}@{latest_ver}`"
         smk_cmd = f"`capsid export snakemake {tool_name}@{latest_ver}`"
 
-        lines.append(f"| **`{tool_name}`** | {ver_str} | `{engine}` | `{platforms}` | `{lic}` | {desc} | {nf_cmd} | {smk_cmd} |")
+        lines.append(
+            f"| **`{tool_name}`** | {ver_str} | `{engine}` | `{platforms}` | `{lic}` | {desc} | {nf_cmd} | {smk_cmd} |"
+        )
 
-    lines.extend([
-        "",
-        "---",
-        "## 🚀 Quick Usage in Pipelines",
-        "",
-        "### Nextflow DSL2",
-        "```groovy",
-        "process SAMTOOLS {",
-        f"    container '{REGISTRY}/samtools:1.25'",
-        "    script:",
-        "    \"samtools view -h in.bam > out.sam\"",
-        "}",
-        "```",
-        "",
-        "### Snakemake",
-        "```python",
-        "rule bwa_mem:",
-        f"    container: 'docker://{REGISTRY}/bwa:0.7.19'",
-        "    shell: 'bwa mem {input} > {output}'",
-        "```",
-        "",
-        "### Apptainer / HPC Direct",
-        "```bash",
-        f"apptainer exec docker://{REGISTRY}/samtools:1.25 samtools --version",
-        "```"
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "## 🚀 Quick Usage in Pipelines",
+            "",
+            "### Nextflow DSL2",
+            "```groovy",
+            "process SAMTOOLS {",
+            f"    container '{REGISTRY}/samtools:1.25'",
+            "    script:",
+            '    "samtools view -h in.bam > out.sam"',
+            "}",
+            "```",
+            "",
+            "### Snakemake",
+            "```python",
+            "rule bwa_mem:",
+            f"    container: 'docker://{REGISTRY}/bwa:0.7.19'",
+            "    shell: 'bwa mem {input} > {output}'",
+            "```",
+            "",
+            "### Apptainer / HPC Direct",
+            "```bash",
+            f"apptainer exec docker://{REGISTRY}/samtools:1.25 samtools --version",
+            "```",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
-def generate_catalog_html(catalog_data: Dict[str, Any]) -> str:
+def generate_catalog_html(catalog_data: dict[str, Any]) -> str:
     """Generate standalone interactive HTML catalog with search and filters."""
     cat_json = json.dumps(catalog_data)
 
@@ -200,7 +204,7 @@ def generate_catalog_html(catalog_data: Dict[str, Any]) -> str:
       <div class="stats-bar">
         <div class="stat-badge">Total Tools: <strong id="stat-tools">0</strong></div>
         <div class="stat-badge">Total Recipes: <strong id="stat-recipes">0</strong></div>
-        <div class="stat-badge">Engines: <strong>uv (PyPI) & Pixi (Rust)</strong></div>
+        <div class="stat-badge">Engines: <strong>uv (PyPI) &amp; pixi (conda)</strong></div>
         <div class="stat-badge">HPC: <strong>Apptainer & Singularity SIF</strong></div>
       </div>
       <div class="search-box">

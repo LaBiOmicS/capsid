@@ -12,13 +12,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+
+      - name: Lint (ruff)
+        run: |
+          uvx ruff@0.17.5 check src tests scripts
+          uvx ruff@0.17.5 format --check src tests scripts
+
+      - name: Type check (mypy)
+        run: uv run --group dev mypy
 
       # Unit tests + golden tests (byte-exact Dockerfiles/exports/catalog/schema for every
-      # hub recipe) + the same golden set rendered through minijinja (Rust engine)
+      # hub recipe and for one synthetic recipe per source build type)
       - name: Tests
         run: uv run pytest -q
 

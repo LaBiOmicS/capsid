@@ -4,18 +4,19 @@ from pathlib import Path
 import pytest
 
 _spec = importlib.util.spec_from_file_location(
-    "bump_pins", Path(__file__).resolve().parent.parent / "scripts/bump_pins.py")
+    "bump_pins", Path(__file__).resolve().parent.parent / "scripts/bump_pins.py"
+)
 bump_pins = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bump_pins)
 
 OLD = "sha256:" + "a" * 64
 NEW = "sha256:" + "b" * 64
-SRC = f'''X = (
+SRC = f"""X = (
     "ghcr.io/prefix-dev/pixi:0.84.2@{OLD}"
 )
 Y = {{"3.12": "python:3.12-slim-bookworm@{OLD}"}}
 DEFAULT_APT_SNAPSHOT = "20261115T000000Z"
-'''
+"""
 
 
 def test_bump_keeps_tags_and_updates_digests_and_snapshot():

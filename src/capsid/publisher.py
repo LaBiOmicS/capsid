@@ -3,22 +3,20 @@ Capsid Recipe Publisher: automated one-click contribution of recipes to Capsid H
 Zero-friction submission: auto-lints, tests, forks, commits, and opens a Pull Request.
 """
 
-import os
 import shutil
 import subprocess
 import urllib.parse
 from pathlib import Path
-from typing import Optional
-import httpx
+
 from rich.console import Console
 from rich.panel import Panel
 
-from capsid.models import Recipe
 from capsid.linter import lint_recipe
+from capsid.locking import lock_paths
+from capsid.models import Recipe, recipe_to_yaml
+from capsid.project import HUB_REPO
 
 console = Console()
-
-from capsid.project import HUB_REPO
 
 DEFAULT_UPSTREAM_REPO = HUB_REPO
 
@@ -28,17 +26,20 @@ def check_gh_authenticated() -> bool:
     if not shutil.which("gh"):
         return False
     try:
-        res = subprocess.run(["gh", "auth", "status"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return res.returncode == 0
-    except Exception:
+        return subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, check=False).returncode == 0
+    except OSError:
         return False
+
+
+def _run(*cmd: str) -> subprocess.CompletedProcess:
+    return subprocess.run(list(cmd), capture_output=True, text=True, check=False)
 
 
 def submit_via_web(recipe: Recipe, upstream_repo: str) -> str:
     """Generate a pre-filled GitHub Issue URL for zero-terminal submission."""
-    import yaml
-    yaml_content = yaml.dump(recipe.model_dump(mode="json", exclude_none=True), sort_keys=False)
-    
+
+    yaml_content = recipe_to_yaml(recipe)
+
     title = f"Recipe Submission: {recipe.name} v{recipe.version}"
     body = (
         f"### Tool Details\n"
@@ -48,14 +49,14 @@ def submit_via_web(recipe: Recipe, upstream_repo: str) -> str:
         f"### Recipe YAML\n"
         f"```yaml\n{yaml_content}\n```\n"
     )
-    
+
     encoded_title = urllib.parse.quote(title)
     encoded_body = urllib.parse.quote(body)
     url = f"https://github.com/{upstream_repo}/issues/new?title={encoded_title}&body={encoded_body}&labels=new-recipe"
     return url
 
 
-def submit_via_gh(recipe: Recipe, recipe_path: Path, upstream_repo: str) -> Optional[str]:
+def submit_via_gh(recipe: Recipe, recipe_path: Path, upstream_repo: str) -> str | None:
     """Submit recipe via GitHub CLI (gh) by auto-forking, branching, and creating PR."""
     branch_name = f"recipe-{recipe.name}-{recipe.version}"
     pr_title = f"feat(recipe): add {recipe.name} {recipe.version}"
@@ -69,45 +70,66 @@ def submit_via_gh(recipe: Recipe, recipe_path: Path, upstream_repo: str) -> Opti
         f"*Submitted automatically via `capsid submit`.*"
     )
 
-    try:
-        # Check if current dir is a git repo
-        is_git = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode == 0
-        if not is_git:
-            console.print("[yellow]Notice: Not inside a git repository. Using web submission fallback.[/yellow]")
-            return None
-
-        # Check existing branch
-        subprocess.run(["git", "checkout", "-b", branch_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subprocess.run(["git", "add", str(recipe_path)], check=True)
-        subprocess.run(["git", "commit", "-m", pr_title], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        # Push using gh
-        console.print(f"[bold cyan]🚀 Pushing recipe and opening Pull Request to [green]{upstream_repo}[/green]...[/bold cyan]")
-        res = subprocess.run(
-            ["gh", "pr", "create", "--repo", upstream_repo, "--title", pr_title, "--body", pr_body, "--head", branch_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        if res.returncode == 0:
-            return res.stdout.strip()
-        else:
-            console.print(f"[yellow]Warning from gh: {res.stderr.strip()}[/yellow]")
-            return None
-    except Exception as e:
-        console.print(f"[yellow]Could not complete automated gh PR: {e}[/yellow]")
+    if _run("git", "rev-parse", "--is-inside-work-tree").returncode != 0:
+        console.print("[yellow]Notice: Not inside a git repository. Using web submission fallback.[/yellow]")
         return None
+
+    def fail(step: str, res: subprocess.CompletedProcess) -> None:
+        console.print(f"[yellow]Could not {step}: {(res.stderr or res.stdout).strip()}[/yellow]")
+
+    # The pull request comes from the user's fork (created if missing; a no-op if it exists)
+    login_res = _run("gh", "api", "user", "--jq", ".login")
+    if login_res.returncode != 0:
+        fail("determine the GitHub login", login_res)
+        return None
+    login = login_res.stdout.strip()
+    fork_res = _run("gh", "repo", "fork", upstream_repo, "--clone=false")
+    if fork_res.returncode != 0:
+        fail(f"fork {upstream_repo}", fork_res)
+        return None
+    fork_url = f"https://github.com/{login}/{upstream_repo.split('/', 1)[1]}.git"
+
+    files = [recipe_path, *(p for p in lock_paths(recipe_path) if p.is_file())]
+    for step, cmd in (
+        (f"create branch {branch_name}", ("git", "switch", "-c", branch_name)),
+        ("stage the recipe", ("git", "add", "--", *map(str, files))),
+        ("commit the recipe", ("git", "commit", "-m", pr_title, "--", *map(str, files))),
+        (f"push to {fork_url}", ("git", "push", fork_url, f"HEAD:refs/heads/{branch_name}")),
+    ):
+        res = _run(*cmd)
+        if res.returncode != 0:
+            fail(step, res)
+            return None
+
+    console.print(f"[bold cyan]🚀 Opening Pull Request to [green]{upstream_repo}[/green]...[/bold cyan]")
+    res = _run(
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        upstream_repo,
+        "--title",
+        pr_title,
+        "--body",
+        pr_body,
+        "--head",
+        f"{login}:{branch_name}",
+    )
+    if res.returncode != 0:
+        fail("open the pull request", res)
+        return None
+    console.print(f"[dim]Your working copy is now on branch '{branch_name}'.[/dim]")
+    return res.stdout.strip()
 
 
 def submit_recipe(
-    recipe: Recipe,
-    recipe_path: Path,
-    upstream_repo: str = DEFAULT_UPSTREAM_REPO,
-    force_web: bool = False
+    recipe: Recipe, recipe_path: Path, upstream_repo: str = DEFAULT_UPSTREAM_REPO, force_web: bool = False
 ) -> None:
     """Run full automated submission flow for a recipe."""
-    console.print(f"[bold cyan]🛡️ Auditing [green]{recipe.name} v{recipe.version}[/green] before submission...[/bold cyan]")
-    
+    console.print(
+        f"[bold cyan]🛡️ Auditing [green]{recipe.name} v{recipe.version}[/green] before submission...[/bold cyan]"
+    )
+
     # 1. Local Audit / Lint
     issues = lint_recipe(recipe_path)
     errors = [i for i in issues if i.level == "ERROR"]
@@ -131,21 +153,25 @@ def submit_recipe(
         pr_url = submit_via_gh(recipe, recipe_path, upstream_repo)
 
     if pr_url:
-        console.print(Panel(
-            f"[bold green]✔ Pull Request successfully opened![/bold green]\n\n"
-            f"[cyan]{pr_url}[/cyan]\n\n"
-            f"The Capsid Bot will now automatically verify, test, and prepare your container for release.",
-            title="🎉 Submission Complete",
-            border_style="green"
-        ))
+        console.print(
+            Panel(
+                f"[bold green]✔ Pull Request successfully opened![/bold green]\n\n"
+                f"[cyan]{pr_url}[/cyan]\n\n"
+                f"The Capsid Bot will now automatically verify, test, and prepare your container for release.",
+                title="🎉 Submission Complete",
+                border_style="green",
+            )
+        )
     else:
         # Fallback to 1-Click Web Submission
         web_url = submit_via_web(recipe, upstream_repo)
-        console.print(Panel(
-            f"[bold yellow]🌐 1-Click Web Submission Ready[/bold yellow]\n\n"
-            f"Click the link below (or copy and paste into your browser) to submit:\n\n"
-            f"[bold cyan]{web_url}[/bold cyan]\n\n"
-            f"The automated Capsid Bot will convert your submission into an approved container automatically!",
-            title="🚀 Next Step",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(
+                f"[bold yellow]🌐 1-Click Web Submission Ready[/bold yellow]\n\n"
+                f"Click the link below (or copy and paste into your browser) to submit:\n\n"
+                f"[bold cyan]{web_url}[/bold cyan]\n\n"
+                f"The automated Capsid Bot will convert your submission into an approved container automatically!",
+                title="🚀 Next Step",
+                border_style="cyan",
+            )
+        )

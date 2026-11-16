@@ -3,6 +3,7 @@ Golden tests: rendered Dockerfiles / workflow exports / catalog for every hub re
 must match tests/golden/expected/ byte for byte. Regenerate deliberately with
 `python scripts/update_golden.py` and review the diff.
 """
+
 import difflib
 import importlib.util
 from pathlib import Path
@@ -10,7 +11,8 @@ from pathlib import Path
 import pytest
 
 _spec = importlib.util.spec_from_file_location(
-    "update_golden", Path(__file__).resolve().parent.parent / "scripts/update_golden.py")
+    "update_golden", Path(__file__).resolve().parent.parent / "scripts/update_golden.py"
+)
 golden = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(golden)
 
@@ -29,7 +31,13 @@ def test_golden_file(rel):
     expected = EXPECTED[rel].read_text()
     got = RENDERED.get(rel)
     if got != expected:
-        diff = "".join(difflib.unified_diff(
-            expected.splitlines(True), (got or "").splitlines(True),
-            fromfile=f"expected/{rel}", tofile="rendered", n=2))
+        diff = "".join(
+            difflib.unified_diff(
+                expected.splitlines(True),
+                (got or "").splitlines(True),
+                fromfile=f"expected/{rel}",
+                tofile="rendered",
+                n=2,
+            )
+        )
         pytest.fail(f"{rel} differs from golden output:\n{diff[:4000]}")

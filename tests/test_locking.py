@@ -13,7 +13,8 @@ from capsid.models import BuildConfig, BuildType, Platform, Recipe, StackRecipe,
 
 def _pixi(**kw):
     return Recipe(
-        name="bwa", version="0.7.19",
+        name="bwa",
+        version="0.7.19",
         build=BuildConfig(type=BuildType.PIXI_CONDA, conda_packages=["bwa==0.7.19"], **kw),
         test=TestConfig(command="bwa"),
     )
@@ -21,19 +22,23 @@ def _pixi(**kw):
 
 def _uv(**kw):
     return Recipe(
-        name="cutadapt", version="5.2",
+        name="cutadapt",
+        version="5.2",
         build=BuildConfig(type=BuildType.UV_PYPI, package="cutadapt==5.2", **kw),
         test=TestConfig(command="cutadapt --version"),
     )
 
 
-@pytest.mark.parametrize("spec,expected", [
-    ("samtools==1.25", ("samtools", '"==1.25"')),
-    ("bwa=0.7.19", ("bwa", '"0.7.19.*"')),
-    ("zlib", ("zlib", '"*"')),
-    ("htslib >=1.20,<2", ("htslib", '">=1.20,<2"')),
-    ("bioconda::fastp==1.4.0", ("fastp", '{ version = "==1.4.0", channel = "bioconda" }')),
-])
+@pytest.mark.parametrize(
+    "spec,expected",
+    [
+        ("samtools==1.25", ("samtools", '"==1.25"')),
+        ("bwa=0.7.19", ("bwa", '"0.7.19.*"')),
+        ("zlib", ("zlib", '"*"')),
+        ("htslib >=1.20,<2", ("htslib", '">=1.20,<2"')),
+        ("bioconda::fastp==1.4.0", ("fastp", '{ version = "==1.4.0", channel = "bioconda" }')),
+    ],
+)
 def test_conda_spec_to_pixi(spec, expected):
     assert conda_spec_to_pixi(spec) == expected
 
@@ -64,7 +69,7 @@ def test_locked_pixi_dockerfile():
     r.pixi_lock = "version: 6\nenvironments: {}\n"
     df = generate_dockerfile(r)
     assert "RUN pixi install --locked" in df
-    assert "COPY <<'EOF_PIXI_LOCK' /build/pixi.lock\nversion: 6" in df
+    assert "COPY <<'EOF_PIXI_LOCK' /opt/pixi/pixi.lock\nversion: 6" in df
     assert '"bwa" = "==0.7.19"' in df
     assert "pixi add" not in df
     # lock content must not leak into the embedded recipe.yaml
@@ -92,7 +97,8 @@ def test_apt_snapshot_default_and_overrides():
     assert "/var/log/dpkg.log" in df  # timestamped logs removed for bit-for-bit layers
 
     assert "snapshot.debian.org/archive/debian/20250101T000000Z" in generate_dockerfile(
-        _pixi(apt_snapshot="20250101T000000Z"))
+        _pixi(apt_snapshot="20250101T000000Z")
+    )
     assert "snapshot.debian.org" not in generate_dockerfile(_pixi(apt_snapshot="latest"))
     # custom base images may not be Debian bookworm: leave their apt sources alone
     assert "snapshot.debian.org" not in generate_dockerfile(_pixi(base_image="ubuntu:24.04@sha256:" + "b" * 64))

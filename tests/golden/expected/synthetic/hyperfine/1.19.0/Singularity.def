@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/hyperfine:1.19.0
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 1.19.0
+    Tool hyperfine
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec hyperfine "$@"
+
+%test
+    hyperfine --version && [ "$CAPSID_RANDOM_SEED" = 42 ] && cat input.txt > out.txt

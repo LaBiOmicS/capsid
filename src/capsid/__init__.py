@@ -2,6 +2,6 @@
 capsid package entrypoint.
 """
 
-from capsid.main import main, app
+from capsid.main import app, main
 
-__all__ = ["main", "app"]
+__all__ = ["app", "main"]

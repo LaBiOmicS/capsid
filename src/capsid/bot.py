@@ -4,21 +4,21 @@ Scans upstream repositories (Bioconda channel data, Bioconda git commits, BioCon
 detects new tools and version upgrades, transforms them into hardened Capsid recipes, and lints them.
 """
 
-import json
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set, Tuple
+from typing import Any
+
 import httpx
 import yaml
 from rich.console import Console
 from rich.table import Table
 
-from capsid.models import Recipe, BuildConfig, BuildType, TestConfig, Platform
-from capsid.scaffolders.bioconda import scaffold_from_bioconda
+from capsid.catalog import export_catalog
 from capsid.linter import lint_recipe
-from capsid.catalog import scan_recipes, export_catalog
+from capsid.models import Platform, recipe_to_yaml
+from capsid.scaffolders.bioconda import scaffold_from_bioconda
 
 console = Console()
 
@@ -36,17 +36,17 @@ class ToolCandidate:
     homepage: str = ""
     timestamp: float = 0.0
     action: str = "NEW_TOOL"  # "NEW_TOOL" or "UPGRADE"
-    current_local_version: Optional[str] = None
-    biocontainer_tag: Optional[str] = None
+    current_local_version: str | None = None
+    biocontainer_tag: str | None = None
     engine_selected: str = "pixi-conda"
     status: str = "PENDING"  # "PENDING", "TRANSFORMED", "FAILED", "SKIPPED"
-    error_message: Optional[str] = None
-    recipe_path: Optional[Path] = None
+    error_message: str | None = None
+    recipe_path: Path | None = None
 
 
-def scan_local_inventory(recipes_dir: Path) -> Dict[str, Set[str]]:
+def scan_local_inventory(recipes_dir: Path) -> dict[str, set[str]]:
     """Scan existing recipes directory and return a map of {tool_name: set_of_versions}."""
-    inventory: Dict[str, Set[str]] = {}
+    inventory: dict[str, set[str]] = {}
     if not recipes_dir.exists():
         return inventory
 
@@ -58,7 +58,7 @@ def scan_local_inventory(recipes_dir: Path) -> Dict[str, Set[str]]:
     return inventory
 
 
-def fetch_quay_biocontainer_tag(tool_name: str, client: httpx.Client) -> Optional[str]:
+def fetch_quay_biocontainer_tag(tool_name: str, client: httpx.Client) -> str | None:
     """Query Quay.io for official BioContainers tag for this tool."""
     try:
         url = f"{QUAY_BIOCONTAINERS_URL}/{tool_name.lower()}"
@@ -71,28 +71,28 @@ def fetch_quay_biocontainer_tag(tool_name: str, client: httpx.Client) -> Optiona
                 sorted_tags = sorted(
                     tags.items(),
                     key=lambda item: item[1].get("last_modified", 0) if isinstance(item[1], dict) else 0,
-                    reverse=True
+                    reverse=True,
                 )
                 if sorted_tags:
                     return f"quay.io/biocontainers/{tool_name.lower()}:{sorted_tags[0][0]}"
-    except Exception:
-        pass
+    except (httpx.HTTPError, ValueError):
+        return None  # BioContainers is optional metadata: never block the robot on it
     return None
 
 
 def fetch_upstream_candidates(
     days: int = 7,
-    limit: Optional[int] = None,
-    specific_tools: Optional[List[str]] = None,
-    recipes_dir: Path = Path("recipes")
-) -> List[ToolCandidate]:
+    limit: int | None = None,
+    specific_tools: list[str] | None = None,
+    recipes_dir: Path = Path("recipes"),
+) -> list[ToolCandidate]:
     """
     Scans Bioconda channel data and commits to find tools added or updated in the last N days.
     Deduplicates against local recipes inventory.
     """
     local_inventory = scan_local_inventory(recipes_dir)
-    candidates: List[ToolCandidate] = []
-    seen_names: Set[str] = set()
+    candidates: list[ToolCandidate] = []
+    seen_names: set[str] = set()
 
     cutoff_timestamp = time.time() - (days * 86400)
     console.print(f"[cyan]🔎 Fetching Bioconda channel data (looking back {days} days)...[/cyan]")
@@ -134,10 +134,10 @@ def fetch_upstream_candidates(
                             homepage=pkg_info.get("home", ""),
                             timestamp=ts,
                             action=action,
-                            current_local_version=curr_ver
+                            current_local_version=curr_ver,
                         )
                     )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort scan of external data; reported, not fatal
         console.print(f"[yellow]Warning: Could not fetch bioconda channeldata.json: {e}[/yellow]")
 
     # 2. Inspect recent commits from bioconda-recipes for any immediate bleeding-edge updates
@@ -166,10 +166,10 @@ def fetch_upstream_candidates(
                                             summary=f"Detected from Bioconda commit: {msg}",
                                             timestamp=time.time(),
                                             action=action,
-                                            current_local_version=curr_ver
+                                            current_local_version=curr_ver,
                                         )
                                     )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - best-effort scan of external data; reported, not fatal
             console.print(f"[dim]Commit check skipped: {e}[/dim]")
 
     # Sort candidates by timestamp (most recent first)
@@ -181,11 +181,7 @@ def fetch_upstream_candidates(
     return candidates
 
 
-def transform_candidate(
-    candidate: ToolCandidate,
-    recipes_dir: Path,
-    dry_run: bool = False
-) -> ToolCandidate:
+def transform_candidate(candidate: ToolCandidate, recipes_dir: Path, dry_run: bool = False) -> ToolCandidate:
     """
     Transforms an upstream candidate into a Capsid recipe.
     Determines engine (uv-pypi vs pixi-conda), applies hardening standards,
@@ -204,7 +200,7 @@ def transform_candidate(
         candidate.version = recipe.version
 
         # Enhance recipe with BioContainers & Robot labels
-        recipe.categories = list(set(recipe.categories + ["biocontainers-migrated", "automated-capsid"]))
+        recipe.categories = sorted({*recipe.categories, "biocontainers-migrated", "automated-capsid"})
         recipe.labels["capsid_bot"] = "weekly-bioconda-biocontainer-robot"
         recipe.labels["upstream_bioconda"] = f"https://bioconda.github.io/recipes/{candidate.name}/README.html"
         if candidate.biocontainer_tag:
@@ -215,12 +211,19 @@ def transform_candidate(
         target_file = recipes_dir / recipe.name / recipe.version / "recipe.yaml"
         candidate.recipe_path = target_file
 
+        # Never touch an existing recipe: it may have been edited and reviewed by hand
+        if target_file.exists():
+            candidate.status = "SKIPPED"
+            console.print(f"    [dim]• {recipe.name}@{recipe.version} already has a recipe; skipped[/dim]")
+            return candidate
+
         if dry_run:
             candidate.status = "TRANSFORMED"
             return candidate
 
+        created_dirs = [d for d in (target_file.parent.parent, target_file.parent) if not d.exists()]
         target_file.parent.mkdir(parents=True, exist_ok=True)
-        yaml_content = yaml.dump(recipe.model_dump(mode="json", exclude_none=True), sort_keys=False)
+        yaml_content = recipe_to_yaml(recipe)
         target_file.write_text(yaml_content)
 
         # Run security and schema linter
@@ -230,14 +233,19 @@ def transform_candidate(
             candidate.status = "FAILED"
             candidate.error_message = "; ".join([e.message for e in errors])
             console.print(f"    [red]✖ Lint failed for {candidate.name}: {candidate.error_message}[/red]")
-            # Clean up failed recipe file
-            if target_file.exists():
-                target_file.unlink()
+            # Remove the rejected recipe (and only the directories created for it)
+            target_file.unlink(missing_ok=True)
+            for d in reversed(created_dirs):
+                if d.is_dir() and not any(d.iterdir()):
+                    d.rmdir()
         else:
             candidate.status = "TRANSFORMED"
-            console.print(f"    [green]✔ Successfully transformed and validated {recipe.name}@{recipe.version} ({candidate.engine_selected})[/green]")
+            console.print(
+                f"    [green]✔ Transformed and validated {recipe.name}@{recipe.version} "
+                f"({candidate.engine_selected})[/green]"
+            )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - one bad upstream recipe must not stop the batch; recorded per candidate
         candidate.status = "FAILED"
         candidate.error_message = str(e)
         console.print(f"    [red]✖ Failed to transform {candidate.name}: {e}[/red]")
@@ -245,9 +253,9 @@ def transform_candidate(
     return candidate
 
 
-def generate_markdown_report(candidates: List[ToolCandidate], days: int) -> str:
+def generate_markdown_report(candidates: list[ToolCandidate], days: int) -> str:
     """Generate Markdown report for GitHub Actions PR summary."""
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     transformed = [c for c in candidates if c.status == "TRANSFORMED"]
     failed = [c for c in candidates if c.status == "FAILED"]
 
@@ -256,13 +264,14 @@ def generate_markdown_report(candidates: List[ToolCandidate], days: int) -> str:
         f"**Run Timestamp:** `{now_str}`",
         f"**Lookback Window:** Last {days} days",
         "",
-        f"The automated Capsid robot inspected upstream repositories (**Bioconda** and **BioContainers**), detected new tools and updates, and converted them into hardened Capsid recipes.",
+        "The Capsid robot inspected **Bioconda** and **BioContainers**, detected new tools and updates, "
+        "and converted them into Capsid recipes.",
         "",
         "### 📊 Summary Statistics",
         f"- **Candidates Discovered:** `{len(candidates)}`",
         f"- **Successfully Transformed:** `{len(transformed)}`",
         f"- **Failed / Lint Issues:** `{len(failed)}`",
-        ""
+        "",
     ]
 
     if transformed:
@@ -270,17 +279,25 @@ def generate_markdown_report(candidates: List[ToolCandidate], days: int) -> str:
         lines.append("| Tool | Version | Action | Engine | Upstream BioContainer | License |")
         lines.append("| :--- | :--- | :--- | :--- | :--- | :--- |")
         for c in transformed:
-            action_badge = "🌟 **New Tool**" if c.action == "NEW_TOOL" else f"🔄 Upgrade (from `{c.current_local_version}`)"
-            biocontainer_cell = f"[`{c.biocontainer_tag.split('/')[-1]}`]({c.biocontainer_tag})" if c.biocontainer_tag else "*Conda/Quay*"
-            lines.append(f"| `{c.name}` | `{c.version}` | {action_badge} | `{c.engine_selected}` | {biocontainer_cell} | {c.license} |")
+            action_badge = (
+                "🌟 **New Tool**" if c.action == "NEW_TOOL" else f"🔄 Upgrade (from `{c.current_local_version}`)"
+            )
+            biocontainer_cell = (
+                f"[`{c.biocontainer_tag.split('/')[-1]}`]({c.biocontainer_tag})"
+                if c.biocontainer_tag
+                else "*Conda/Quay*"
+            )
+            lines.append(
+                f"| `{c.name}` | `{c.version}` | {action_badge} | `{c.engine_selected}` "
+                f"| {biocontainer_cell} | {c.license} |"
+            )
         lines.append("")
 
     if failed:
         lines.append("### ⚠️ Failed Transformations (Needs Manual Review)")
         lines.append("| Tool | Attempted Version | Reason |")
         lines.append("| :--- | :--- | :--- |")
-        for c in failed:
-            lines.append(f"| `{c.name}` | `{c.version}` | {c.error_message or 'Unknown error'} |")
+        lines.extend(f"| `{c.name}` | `{c.version}` | {c.error_message or 'Unknown error'} |" for c in failed)
         lines.append("")
 
     lines.append("---")
@@ -292,12 +309,12 @@ def generate_markdown_report(candidates: List[ToolCandidate], days: int) -> str:
 def run_robot_pipeline(
     days: int = 7,
     limit: int = 10,
-    specific_tools: Optional[List[str]] = None,
+    specific_tools: list[str] | None = None,
     recipes_dir: Path = Path("recipes"),
     catalog_path: Path = Path("catalog.json"),
     dry_run: bool = False,
-    update_catalog: bool = True
-) -> Tuple[List[ToolCandidate], str]:
+    update_catalog: bool = True,
+) -> tuple[list[ToolCandidate], str]:
     """
     Executes the full robot cycle:
     1. Scan Bioconda & BioContainers upstreams
@@ -311,10 +328,7 @@ def run_robot_pipeline(
     console.print(f"   [dim]Lookback: {days} days | Batch limit: {limit} tools | Dry run: {dry_run}[/dim]\n")
 
     candidates = fetch_upstream_candidates(
-        days=days,
-        limit=limit,
-        specific_tools=specific_tools,
-        recipes_dir=recipes_dir
+        days=days, limit=limit, specific_tools=specific_tools, recipes_dir=recipes_dir
     )
 
     if not candidates:
@@ -324,7 +338,7 @@ def run_robot_pipeline(
 
     console.print(f"[bold green]Found {len(candidates)} candidate(s) to process:[/bold green]\n")
 
-    processed: List[ToolCandidate] = []
+    processed: list[ToolCandidate] = []
     for candidate in candidates:
         result = transform_candidate(candidate, recipes_dir=recipes_dir, dry_run=dry_run)
         processed.append(result)
@@ -348,14 +362,14 @@ def run_robot_pipeline(
     table.add_column("Status")
 
     for c in processed:
-        status_style = "green" if c.status == "TRANSFORMED" else "red"
+        status_style = {"TRANSFORMED": "green", "SKIPPED": "dim"}.get(c.status, "red")
         table.add_row(
             c.name,
             c.version,
             c.action,
             c.engine_selected,
             "Quay Tag Found" if c.biocontainer_tag else "Conda only",
-            f"[{status_style}]{c.status}[/{status_style}]"
+            f"[{status_style}]{c.status}[/{status_style}]",
         )
 
     console.print("\n")
@@ -368,10 +382,10 @@ def run_robot_pipeline(
 def migrate_bioconda_all(
     recipes_dir: Path = Path("recipes"),
     category: str = "core",
-    limit: Optional[int] = None,
+    limit: int | None = None,
     dry_run: bool = False,
-    update_catalog: bool = False
-) -> Tuple[int, int]:
+    update_catalog: bool = False,
+) -> tuple[int, int]:
     """
     Massively converts all Bioconda tools into modern Capsid recipes.
     Categories:
@@ -380,10 +394,13 @@ def migrate_bioconda_all(
       - 'perl': Perl packages (~736 packages)
       - 'all': All 12,903 packages
     """
-    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
-    console.print(f"\n[bold magenta]🚀 Capsid Massive Migrator: Bioconda -> Capsid[/bold magenta]")
-    console.print(f"   [dim]Target category: [bold cyan]{category.upper()}[/bold cyan] | Target dir: {recipes_dir} | Dry-run: {dry_run}[/dim]\n")
+    console.print("\n[bold magenta]🚀 Capsid Massive Migrator: Bioconda -> Capsid[/bold magenta]")
+    console.print(
+        f"   [dim]Target category: [bold cyan]{category.upper()}[/bold cyan] | "
+        f"Target dir: {recipes_dir} | Dry-run: {dry_run}[/dim]\n"
+    )
 
     console.print("[cyan]📥 Downloading Bioconda central channel index...[/cyan]")
     with httpx.Client(timeout=30.0, headers={"User-Agent": "capsid-robot/1.0"}) as client:
@@ -397,19 +414,18 @@ def migrate_bioconda_all(
     console.print(f"   [dim]Total packages in Bioconda: {len(packages)}[/dim]")
 
     # Filter by category
-    selected_items: List[Tuple[str, Dict[str, Any]]] = []
+    selected_items: list[tuple[str, dict[str, Any]]] = []
     for name, info in packages.items():
         name_lower = name.lower()
-        is_r = name_lower.startswith("bioconductor-") or name_lower.startswith("r-")
+        is_r = name_lower.startswith(("bioconductor-", "r-"))
         is_perl = name_lower.startswith("perl-")
 
-        if category == "core" and not is_r and not is_perl:
-            selected_items.append((name_lower, info))
-        elif category == "r" and is_r:
-            selected_items.append((name_lower, info))
-        elif category == "perl" and is_perl:
-            selected_items.append((name_lower, info))
-        elif category == "all":
+        if (
+            (category == "core" and not is_r and not is_perl)
+            or (category == "r" and is_r)
+            or (category == "perl" and is_perl)
+            or category == "all"
+        ):
             selected_items.append((name_lower, info))
 
     console.print(f"[bold green]✔ Filtered {len(selected_items)} packages matching category '{category}'.[/bold green]")
@@ -427,7 +443,7 @@ def migrate_bioconda_all(
         BarColumn(),
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeRemainingColumn(),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task(f"[cyan]Converting {category.upper()} tools...", total=len(selected_items))
 
@@ -466,17 +482,14 @@ def migrate_bioconda_all(
                     "cmake_args": [],
                     "build_commands": [],
                     "dependencies": {"build": [], "run": []},
-                    "env": {}
+                    "env": {},
                 },
-                "test": {
-                    "command": f"{name} --help || {name} -h || {name} --version || true",
-                    "expected_exit_code": 0
-                },
+                "test": {"command": f"{name} --help || {name} -h || {name} --version || true", "expected_exit_code": 0},
                 "labels": {
                     "capsid_migrator": "bioconda-massive-migrator",
                     "bioconda_category": category,
-                    "upstream_bioconda": f"https://bioconda.github.io/recipes/{name}/README.html"
-                }
+                    "upstream_bioconda": f"https://bioconda.github.io/recipes/{name}/README.html",
+                },
             }
 
             if not dry_run:
@@ -487,7 +500,7 @@ def migrate_bioconda_all(
             created_count += 1
             progress.advance(task)
 
-    console.print(f"\n[bold green]✔ Conversion complete![/bold green]")
+    console.print("\n[bold green]✔ Conversion complete![/bold green]")
     console.print(f"   [cyan]• Newly created recipes:[/cyan] [bold]{created_count}[/bold]")
     console.print(f"   [yellow]• Skipped (already existed):[/yellow] [bold]{skipped_count}[/bold]")
     console.print(f"   [dim]• Output location: {recipes_dir.resolve()}[/dim]")

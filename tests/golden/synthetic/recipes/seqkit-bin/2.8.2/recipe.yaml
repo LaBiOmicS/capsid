@@ -1,0 +1,14 @@
+name: seqkit-bin
+version: 2.8.2
+description: SeqKit official static binary, binary verification recipe
+license: MIT
+platforms: [linux/amd64, linux/arm64]
+build:
+  type: binary
+  binary_url_amd64: https://github.com/shenwei356/seqkit/releases/download/v2.8.2/seqkit_linux_amd64.tar.gz
+  sha256_amd64: a6515a64bf28ceba6922a3854d8ec898ca2ca637b4b00fc883c83076dfaf1ffa
+  binary_url_arm64: https://github.com/shenwei356/seqkit/releases/download/v2.8.2/seqkit_linux_arm64.tar.gz
+  sha256_arm64: 8c12816c0bf6c01cfcda329fdb5f6c1479cf2485ce9413ce36b96237524da9dc
+test:
+  command: seqkit version
+  expected_output: "v2.8.2"

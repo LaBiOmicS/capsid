@@ -9,14 +9,15 @@ always newer than the refreshed base images.
     python scripts/bump_pins.py            # rewrite the file, print what changed
     python scripts/bump_pins.py --check    # exit 1 if anything is outdated, change nothing
 """
+
 import argparse
 import datetime as dt
 import json
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, List, Tuple
 
 TARGET = Path(__file__).resolve().parent.parent / "src/capsid/builders/dockerfile_gen.py"
 PIN_RE = re.compile(r'"(?P<ref>[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+)@(?P<digest>sha256:[0-9a-f]{64})"')
@@ -27,7 +28,9 @@ def resolve_digest(ref: str) -> str:
     """Index (multi-arch manifest list) digest of image:tag, as the registry serves it."""
     out = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", ref, "--format", "{{json .Manifest.Digest}}"],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     digest = json.loads(out)
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
@@ -35,9 +38,9 @@ def resolve_digest(ref: str) -> str:
     return digest
 
 
-def bump(text: str, resolve: Callable[[str], str], snapshot: str) -> Tuple[str, List[str]]:
+def bump(text: str, resolve: Callable[[str], str], snapshot: str) -> tuple[str, list[str]]:
     """Return (new_text, human-readable changes)."""
-    changes: List[str] = []
+    changes: list[str] = []
 
     def repl(m: "re.Match[str]") -> str:
         new = resolve(m["ref"])
@@ -61,7 +64,7 @@ def main() -> int:
     ap.add_argument("--snapshot", help="apt snapshot timestamp (default: today 00:00 UTC)")
     args = ap.parse_args()
 
-    snapshot = args.snapshot or dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT000000Z")
+    snapshot = args.snapshot or dt.datetime.now(dt.UTC).strftime("%Y%m%dT000000Z")
     old = TARGET.read_text()
     new, changes = bump(old, resolve_digest, snapshot)
     for c in changes:

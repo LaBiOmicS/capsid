@@ -1,0 +1,12 @@
+name: hello
+version: 2.12.1
+description: GNU Hello, autotools verification recipe
+license: GPL-3.0-or-later
+platforms: [linux/amd64]
+build:
+  type: autotools
+  source: https://ftp.gnu.org/gnu/hello/hello-2.12.1.tar.gz
+  sha256: 8d99142afd92576f30b0cd7cb42a8dc6809998bc5d607d88761f512e26c7db20
+test:
+  command: hello --version | head -1
+  expected_output: "(GNU Hello) 2.12.1"

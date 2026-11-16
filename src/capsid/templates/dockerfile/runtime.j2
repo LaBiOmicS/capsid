@@ -20,7 +20,9 @@ RUN groupadd -r -g 1000 bio && \
     mkdir -p /scratch /data /work /lustre /shared /tmp /home/bio && \
     chmod 1777 /tmp /scratch /data /work /lustre /shared
 
-# PATH for login shells (profile.d) and PAM sessions (/etc/environment is not expanded)
+# PATH for login shells (profile.d) and PAM sessions (/etc/environment is not expanded);
+# single quotes are intended: ${PATH:-} must be expanded at login, not at build time
+# hadolint ignore=SC2016
 RUN echo 'export PATH="{{ path }}:${PATH:-}"' > /etc/profile.d/capsid.sh && \
     chmod 0644 /etc/profile.d/capsid.sh && \
     echo 'PATH="{{ path }}:{{ system_path }}"' >> /etc/environment
@@ -29,19 +31,22 @@ RUN echo 'export PATH="{{ path }}:${PATH:-}"' > /etc/profile.d/capsid.sh && \
 {% for c in copies %}
 COPY --from={{ c[0] }} {{ c[1] }} {{ c[2] }}
 {% endfor %}
-RUN chmod -R a+rX {{ copy_targets | join(' ') }}
+RUN chmod -R a+rX {{ copy_targets | join(' ') }} && \
+{% for l in links %}
+    ln -s {{ l[0] }} {{ l[1] }} && \
+{% endfor %}
+    mkdir -p /etc/capsid
 
 # -------------------------------------------------------------
 # FAIR & provenance assets (/etc/capsid/)
 # -------------------------------------------------------------
-RUN mkdir -p /etc/capsid
 {% for c in provenance_copies %}
 COPY --from={{ c[0] }} {{ c[1] }} {{ c[2] }}
 {% endfor %}
 {% for asset in fair_assets %}
 
 COPY <<'{{ asset.marker }}' /etc/capsid/{{ asset.filename }}
-{{ asset.content }}
+{{ asset.content | heredoc(asset.marker) }}
 {{ asset.marker }}
 {% endfor %}
 

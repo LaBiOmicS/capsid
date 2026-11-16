@@ -3,6 +3,7 @@ Integration tests for Capsid CLI commands using Typer CliRunner.
 """
 
 from typer.testing import CliRunner
+
 from capsid.main import app
 
 runner = CliRunner()
@@ -11,7 +12,7 @@ runner = CliRunner()
 def test_cli_help():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "Modern BioContainers CLI" in result.output
+    assert "Capsid" in result.output and "lint" in result.output
     assert "build" in result.output
     assert "export" in result.output
     assert "lint" in result.output
@@ -40,3 +41,24 @@ def test_cli_stack_alias_help():
     assert "dockerfile" in result.output
     assert "build" in result.output
     assert "test" in result.output
+
+
+def test_engine_version_matches_pyproject():
+    import tomllib
+    from pathlib import Path
+
+    from capsid.project import VERSION
+
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == VERSION
+
+
+def test_version_option():
+    from typer.testing import CliRunner
+
+    from capsid.main import app
+    from capsid.project import VERSION
+
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"capsid {VERSION}"

@@ -1,11 +1,12 @@
 """
 Catalog generator: scans recipes, validates manifests, and compiles the central catalog.
-Includes GA4GH TRS and workflow orchestrator (Nextflow, Snakemake, Singularity) metadata.
+Includes image references and workflow snippets (Nextflow, Snakemake, Apptainer) per version.
 """
 
 import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
+
 import yaml
 from rich.console import Console
 from rich.table import Table
@@ -16,9 +17,9 @@ from capsid.project import REGISTRY
 console = Console()
 
 
-def scan_recipes(recipes_dir: Path) -> List[Recipe]:
+def scan_recipes(recipes_dir: Path) -> list[Recipe]:
     """Scan directory recursively for all recipe.yaml files."""
-    recipes: List[Recipe] = []
+    recipes: list[Recipe] = []
     if not recipes_dir.exists():
         return recipes
 
@@ -27,16 +28,16 @@ def scan_recipes(recipes_dir: Path) -> List[Recipe]:
             raw = yaml.safe_load(p.read_text())
             recipe = Recipe.model_validate(raw)
             recipes.append(recipe)
-        except Exception as e:
+        except (OSError, ValueError, yaml.YAMLError) as e:  # pydantic.ValidationError is a ValueError
             console.print(f"[yellow]Warning: Could not parse {p}: {e}[/yellow]")
 
     return recipes
 
 
-def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = REGISTRY) -> Dict[str, Any]:
-    """Compile recipes list into a catalog structure compatible with GA4GH TRS and search UI."""
-    tools: Dict[str, Any] = {}
-    
+def build_catalog_dict(recipes: list[Recipe], registry_prefix: str = REGISTRY) -> dict[str, Any]:
+    """Compile recipes list into a catalog structure used by the hub README and search page."""
+    tools: dict[str, Any] = {}
+
     for r in recipes:
         if r.name not in tools:
             tools[r.name] = {
@@ -46,9 +47,9 @@ def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = REGISTRY) -
                 "homepage": r.homepage or "",
                 "license": r.license or "UNKNOWN",
                 "categories": r.categories,
-                "versions": {}
+                "versions": {},
             }
-        
+
         tools[r.name]["versions"][r.version] = {
             "version": r.version,
             "canonical_tag": r.canonical_tag,
@@ -60,19 +61,14 @@ def build_catalog_dict(recipes: List[Recipe], registry_prefix: str = REGISTRY) -
                 "docker": f"docker://{registry_prefix}/{r.name}:{r.version}",
                 "apptainer": f"docker://{registry_prefix}/{r.name}:{r.version}",
                 "nextflow": f"{registry_prefix}/{r.name}:{r.version}",
-                "snakemake": f"docker://{registry_prefix}/{r.name}:{r.version}"
-            }
+                "snakemake": f"docker://{registry_prefix}/{r.name}:{r.version}",
+            },
         }
 
-    return {
-        "version": "1.1.0",
-        "total_tools": len(tools),
-        "total_recipes": len(recipes),
-        "tools": tools
-    }
+    return {"version": "1.1.0", "total_tools": len(tools), "total_recipes": len(recipes), "tools": tools}
 
 
-def export_catalog(recipes_dir: Path, output_file: Path) -> Dict[str, Any]:
+def export_catalog(recipes_dir: Path, output_file: Path) -> dict[str, Any]:
     """Scan recipes, build catalog, and save to json."""
     recipes = scan_recipes(recipes_dir)
     cat = build_catalog_dict(recipes)
@@ -80,9 +76,11 @@ def export_catalog(recipes_dir: Path, output_file: Path) -> Dict[str, Any]:
     return cat
 
 
-def print_catalog_summary(recipes: List[Recipe]) -> None:
+def print_catalog_summary(recipes: list[Recipe]) -> None:
     """Print an elegant Rich summary table of all indexed recipes."""
-    table = Table(title="Modern BioContainers Catalog (HPC & Orchestrator Ready)", show_header=True, header_style="bold magenta")
+    table = Table(
+        title="Modern BioContainers Catalog (HPC & Orchestrator Ready)", show_header=True, header_style="bold magenta"
+    )
     table.add_column("Tool", style="bold green")
     table.add_column("Version", style="cyan")
     table.add_column("Engine", style="yellow")
@@ -96,10 +94,10 @@ def print_catalog_summary(recipes: List[Recipe]) -> None:
             r.name,
             r.version,
             r.build.type.value,
-            ", ".join([p.value.split('/')[1] for p in r.platforms]),
+            ", ".join([p.value.split("/")[1] for p in r.platforms]),
             "✔ NF / SMK / SIF",
             r.license or "UNKNOWN",
-            (r.description or "")[:35]
+            (r.description or "")[:35],
         )
 
     console.print(table)

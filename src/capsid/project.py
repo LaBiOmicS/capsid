@@ -14,3 +14,6 @@ HUB_URL = f"https://github.com/{HUB_REPO}"
 REGISTRY = "ghcr.io/labiomics/capsid"
 
 VENDOR = "LaBiOmicS Capsid Project"
+
+# Engine version recorded in image labels and SBOMs (keep equal to pyproject.toml)
+VERSION = "0.1.0"

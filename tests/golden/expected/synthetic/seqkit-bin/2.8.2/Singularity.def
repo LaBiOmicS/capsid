@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ghcr.io/labiomics/capsid/seqkit-bin:2.8.2
+
+%labels
+    Author LaBiOmicS Capsid Project
+    Version 2.8.2
+    Tool seqkit-bin
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/tmp/.cache
+
+%runscript
+    exec seqkit-bin "$@"
+
+%test
+    seqkit version

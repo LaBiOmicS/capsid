@@ -5,8 +5,6 @@ Snakemake rules, and Apptainer/Singularity definition files from Capsid recipes.
 Templates: capsid/templates/exports/*.j2
 """
 
-from typing import Optional
-
 from capsid.models import Recipe
 from capsid.project import ENGINE_URL, REGISTRY, VENDOR
 from capsid.templating import render
@@ -28,7 +26,7 @@ def export_nextflow_process(recipe: Recipe, registry_prefix: str = REGISTRY) -> 
     )
 
 
-def export_nextflow_config(recipe: Optional[Recipe] = None, registry_prefix: str = REGISTRY) -> str:
+def export_nextflow_config(recipe: Recipe | None = None, registry_prefix: str = REGISTRY) -> str:
     """Generate universal nextflow.config supporting Docker, Podman, Singularity, Apptainer, and SLURM."""
     return render(
         "exports/nextflow_config.j2",

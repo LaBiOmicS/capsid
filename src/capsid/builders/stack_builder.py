@@ -5,11 +5,12 @@ Combines multiple individual recipes into a single unified multi-tool container
 Uses the same hardened runtime stage as single-tool images (non-root, tini, HPC mounts).
 """
 
-from typing import List, Tuple
+import json
 
-from capsid.locking import pixi_manifest
-from capsid.models import Platform, StackRecipe, Recipe, BuildType
+import yaml
+
 from capsid.builders.dockerfile_gen import (
+    CONDA_ENV_LINK,
     CONDA_PREFIX,
     DEFAULT_DEBIAN_RUNTIME,
     DEFAULT_PIXI_BUILDER,
@@ -17,18 +18,24 @@ from capsid.builders.dockerfile_gen import (
     DEFAULT_SOURCE_DATE_EPOCH,
     DEFAULT_UV_BUILDER,
     PIXI_BUILDER_TEMPLATE,
+    PIXI_WORKSPACE,
     UV_BUILDER_TEMPLATE,
     VENV_PREFIX,
     apt_setup,
+    check_identity,
     python_image,
     render,
     render_dockerfile,
 )
+from capsid.locking import pixi_manifest
+from capsid.models import BuildType, Platform, Recipe, StackRecipe
+from capsid.project import HUB_URL, VENDOR, VERSION
+from capsid.sbom import generate_stack_sbom
 
 DEFAULT_STACK_CHANNELS = ["conda-forge", "bioconda"]
 
 
-def stack_platforms(resolved_recipes: List[Recipe]) -> List[Platform]:
+def stack_platforms(resolved_recipes: list[Recipe]) -> list[Platform]:
     """Platforms supported by every component."""
     common = [Platform.LINUX_AMD64, Platform.LINUX_ARM64]
     for r in resolved_recipes:
@@ -36,32 +43,48 @@ def stack_platforms(resolved_recipes: List[Recipe]) -> List[Platform]:
     return common
 
 
-def stack_inputs(stack: StackRecipe, resolved_recipes: List[Recipe]):
+def stack_inputs(stack: StackRecipe, resolved_recipes: list[Recipe]):
     """(channels, conda_packages, pypi_packages, python_version) for a stack."""
-    channels: List[str] = []
-    conda: List[str] = []
-    pypi: List[str] = []
-    pyvers: List[str] = []
+    channels: list[str] = []
+    conda: list[str] = []
+    pypi: list[str] = []
+    pyvers: list[str] = []
     for r in resolved_recipes:
         if r.build.type == BuildType.PIXI_CONDA:
             conda.extend(r.build.conda_packages or [])
             channels.extend(r.build.channels or DEFAULT_STACK_CHANNELS)
-        elif r.build.type == BuildType.UV_PYPI and r.build.package:
-            pypi.append(r.build.package)
+        elif r.build.type == BuildType.UV_PYPI:
+            if r.build.package:
+                pypi.append(r.build.package)
             pyvers.append(r.build.python_version or DEFAULT_PYTHON_VERSION)
+        else:
+            raise ValueError(
+                f"Stack '{stack.name}': component '{r.name}' uses build type '{r.build.type.value}'; "
+                "stacks support pixi-conda and uv-pypi"
+            )
     pyvers = list(dict.fromkeys(pyvers))
-    return (list(dict.fromkeys(channels)), list(dict.fromkeys(conda)), list(dict.fromkeys(pypi)),
-            pyvers[0] if pyvers else DEFAULT_PYTHON_VERSION)
+    if len(pyvers) > 1:
+        raise ValueError(
+            f"Stack '{stack.name}': PyPI components require different Python versions {pyvers}; "
+            "they must share one interpreter"
+        )
+    return (
+        list(dict.fromkeys(channels)),
+        list(dict.fromkeys(conda)),
+        list(dict.fromkeys(pypi)),
+        pyvers[0] if pyvers else DEFAULT_PYTHON_VERSION,
+    )
 
 
-def generate_stack_dockerfile(stack: StackRecipe, resolved_recipes: List[Recipe]) -> str:
+def generate_stack_dockerfile(stack: StackRecipe, resolved_recipes: list[Recipe]) -> str:
     """Generate a multi-stage Dockerfile combining all stack tools."""
-    conda_packages: List[str] = []
-    channels: List[str] = []
-    pypi_packages: List[str] = []
-    python_versions: List[str] = []
-    build_deps: List[str] = []
-    run_deps: List[str] = []
+    check_identity(stack.name, stack.version)
+    conda_packages: list[str] = []
+    channels: list[str] = []
+    pypi_packages: list[str] = []
+    python_versions: list[str] = []
+    build_deps: list[str] = []
+    run_deps: list[str] = []
 
     for r in resolved_recipes:
         if r.build.type == BuildType.PIXI_CONDA:
@@ -89,41 +112,51 @@ def generate_stack_dockerfile(stack: StackRecipe, resolved_recipes: List[Recipe]
         )
 
     apt = apt_setup(stack.apt_snapshot, base_overridden=False)
-    builders: List[str] = []
-    path_dirs: List[str] = []
-    copies: List[Tuple[str, str, str]] = []
-    provenance: List[Tuple[str, str, str]] = []
+    builders: list[str] = []
+    path_dirs: list[str] = []
+    copies: list[tuple[str, str, str]] = []
+    provenance: list[tuple[str, str, str]] = []
+    links: list[tuple[str, str]] = []
+    env: dict[str, str] = {}
 
     if conda_packages:
-        builders.append(render(
-            PIXI_BUILDER_TEMPLATE,
-            pixi_builder=DEFAULT_PIXI_BUILDER,
-            source_date_epoch=DEFAULT_SOURCE_DATE_EPOCH,
-            channels=list(dict.fromkeys(channels)),
-            conda_packages=conda_packages,
-            pixi_lock=stack.pixi_lock,
-            pixi_manifest=pixi_manifest(stack.name, list(dict.fromkeys(channels)), conda_packages,
-                                        stack_platforms(resolved_recipes)),
-        ))
+        builders.append(
+            render(
+                PIXI_BUILDER_TEMPLATE,
+                pixi_builder=DEFAULT_PIXI_BUILDER,
+                workspace=PIXI_WORKSPACE,
+                source_date_epoch=DEFAULT_SOURCE_DATE_EPOCH,
+                channels=list(dict.fromkeys(channels)),
+                conda_packages=conda_packages,
+                pixi_lock=stack.pixi_lock,
+                pixi_manifest=pixi_manifest(
+                    stack.name, list(dict.fromkeys(channels)), conda_packages, stack_platforms(resolved_recipes)
+                ),
+            )
+        )
         path_dirs.append(f"{CONDA_PREFIX}/bin")
-        copies.append(("pixi_builder", "/build/.pixi/envs/default", CONDA_PREFIX))
-        provenance.append(("pixi_builder", "/build/pixi.lock", "/etc/capsid/pixi.lock"))
+        copies.append(("pixi_builder", CONDA_PREFIX, CONDA_PREFIX))
+        links.append((CONDA_PREFIX, CONDA_ENV_LINK))
+        env["CONDA_PREFIX"] = CONDA_PREFIX
+        provenance.append(("pixi_builder", f"{PIXI_WORKSPACE}/pixi.lock", "/etc/capsid/pixi.lock"))
 
     runtime_base = DEFAULT_DEBIAN_RUNTIME
     if pypi_packages:
         runtime_base = python_image(python_versions[0])
-        builders.append(render(
-            UV_BUILDER_TEMPLATE,
-            uv_builder=DEFAULT_UV_BUILDER,
-            builder_base=runtime_base,
-            source_date_epoch=DEFAULT_SOURCE_DATE_EPOCH,
-            apt_setup=apt,
-            venv_prefix=VENV_PREFIX,
-            python_version=python_versions[0],
-            build_deps=list(dict.fromkeys(build_deps)),
-            pypi_packages=pypi_packages,
-            requirements_lock=stack.requirements_lock,
-        ))
+        builders.append(
+            render(
+                UV_BUILDER_TEMPLATE,
+                uv_builder=DEFAULT_UV_BUILDER,
+                builder_base=runtime_base,
+                source_date_epoch=DEFAULT_SOURCE_DATE_EPOCH,
+                apt_setup=apt,
+                venv_prefix=VENV_PREFIX,
+                python_version=python_versions[0],
+                build_deps=list(dict.fromkeys(build_deps)),
+                pypi_packages=pypi_packages,
+                requirements_lock=stack.requirements_lock,
+            )
+        )
         path_dirs.append(f"{VENV_PREFIX}/bin")
         copies.append(("python_builder", VENV_PREFIX, VENV_PREFIX))
         provenance.append(("python_builder", "/requirements.lock", "/etc/capsid/requirements.lock"))
@@ -135,9 +168,12 @@ def generate_stack_dockerfile(stack: StackRecipe, resolved_recipes: List[Recipe]
         ("org.opencontainers.image.title", stack.name),
         ("org.opencontainers.image.version", stack.version),
         ("org.opencontainers.image.description", stack.description or ""),
-        ("org.opencontainers.image.vendor", "Capsid Project"),
-        ("io.capsid.type", "compose"),
+        ("org.opencontainers.image.vendor", VENDOR),
+        ("org.opencontainers.image.source", HUB_URL),
+        ("io.capsid.version", VERSION),
+        ("io.capsid.type", "stack"),
         ("io.capsid.components", ",".join(f"{r.name}@{r.version}" for r in resolved_recipes)),
+        ("io.capsid.fair.sbom", "/etc/capsid/sbom.spdx.json"),
         ("io.capsid.hpc", "apptainer,singularity,slurm"),
         ("io.capsid.orchestrators", "nextflow,snakemake"),
     ]
@@ -153,4 +189,20 @@ def generate_stack_dockerfile(stack: StackRecipe, resolved_recipes: List[Recipe]
         provenance_copies=provenance,
         labels=labels,
         apt=apt,
+        extra_env=env,
+        links=links,
+        fair_assets=[
+            {
+                "marker": "EOF_STACK",
+                "filename": "stack.yaml",
+                "content": yaml.safe_dump(stack.model_dump(mode="json", exclude_none=True), sort_keys=False).strip(),
+            },
+            {
+                "marker": "EOF_SBOM",
+                "filename": "sbom.spdx.json",
+                "content": json.dumps(
+                    generate_stack_sbom(stack, resolved_recipes, DEFAULT_SOURCE_DATE_EPOCH), indent=2
+                ),
+            },
+        ],
     )

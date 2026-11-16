@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Golden tests: the contract every Capsid implementation (Python today, Rust/Wasm maybe later)
-must reproduce byte for byte.
+Golden tests: the exact Dockerfiles, workflow exports, catalog and schemas that Capsid must
+produce for a fixed set of recipes. Any change to the output shows up as a reviewable diff.
 
     tests/golden/inputs/recipes/<tool>/<version>/{recipe.yaml, pixi.lock | requirements.lock}
     tests/golden/inputs/stacks/<stack>.yaml (+ <stack>.pixi.lock / .requirements.lock)
+    tests/golden/synthetic/recipes/<tool>/<version>/recipe.yaml   (source/binary build types)
     tests/golden/expected/recipes/<tool>/<version>/{Dockerfile, module.nf, rule.smk,
                                                      Singularity.def, nextflow.config}
     tests/golden/expected/stacks/<stack>/Dockerfile
@@ -17,18 +18,21 @@ must reproduce byte for byte.
 
 Regenerating is a deliberate act: review the diff of tests/golden/expected/ before committing.
 """
+
 import argparse
 import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "tests" / "golden"
 INPUTS = GOLDEN / "inputs"
+# Hand-written recipes for build types the hub does not use yet (autotools, make, cmake,
+# rust-cargo, binary); each was verified with a real build. Never overwritten by --hub.
+SYNTHETIC = GOLDEN / "synthetic"
 EXPECTED = GOLDEN / "expected"
 LOCK_SUFFIXES = ("pixi.lock", "requirements.lock")
 
@@ -36,30 +40,42 @@ LOCK_SUFFIXES = ("pixi.lock", "requirements.lock")
 def _load_recipe(path: Path):
     from capsid.locking import attach_lockfiles
     from capsid.models import Recipe
+
     recipe = Recipe.model_validate(yaml.safe_load(path.read_text()))
     return attach_lockfiles(recipe, path)
 
 
-def render_all(inputs: Path = INPUTS) -> Dict[str, str]:
-    """Every expected file, keyed by its path relative to expected/."""
+def _render_recipe(path: Path, base: str, out: dict[str, str]) -> None:
     from capsid.builders.dockerfile_gen import generate_dockerfile
+    from capsid.exporter import (
+        export_apptainer_def,
+        export_nextflow_config,
+        export_nextflow_process,
+        export_snakemake_rule,
+    )
+
+    r = _load_recipe(path)
+    out[f"{base}/Dockerfile"] = generate_dockerfile(r)
+    out[f"{base}/module.nf"] = export_nextflow_process(r)
+    out[f"{base}/rule.smk"] = export_snakemake_rule(r)
+    out[f"{base}/Singularity.def"] = export_apptainer_def(r)
+    out[f"{base}/nextflow.config"] = export_nextflow_config(r)
+
+
+def render_all(inputs: Path = INPUTS) -> dict[str, str]:
+    """Every expected file, keyed by its path relative to expected/."""
     from capsid.builders.stack_builder import generate_stack_dockerfile
     from capsid.catalog import build_catalog_dict, scan_recipes
-    from capsid.exporter import (export_apptainer_def, export_nextflow_config,
-                                 export_nextflow_process, export_snakemake_rule)
+    from capsid.exporter import export_nextflow_config
     from capsid.locking import attach_lockfiles
     from capsid.models import StackRecipe
 
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     recipes_dir = inputs / "recipes"
     for path in sorted(recipes_dir.glob("*/*/recipe.yaml")):
-        r = _load_recipe(path)
-        base = f"recipes/{path.parent.parent.name}/{path.parent.name}"
-        out[f"{base}/Dockerfile"] = generate_dockerfile(r)
-        out[f"{base}/module.nf"] = export_nextflow_process(r)
-        out[f"{base}/rule.smk"] = export_snakemake_rule(r)
-        out[f"{base}/Singularity.def"] = export_apptainer_def(r)
-        out[f"{base}/nextflow.config"] = export_nextflow_config(r)
+        _render_recipe(path, f"recipes/{path.parent.parent.name}/{path.parent.name}", out)
+    for path in sorted((SYNTHETIC / "recipes").glob("*/*/recipe.yaml")):
+        _render_recipe(path, f"synthetic/{path.parent.parent.name}/{path.parent.name}", out)
 
     for path in sorted((inputs / "stacks").glob("*.yaml")):
         stack = StackRecipe.model_validate(yaml.safe_load(path.read_text()))
@@ -73,6 +89,7 @@ def render_all(inputs: Path = INPUTS) -> Dict[str, str]:
 
     out["nextflow.config"] = export_nextflow_config()
     from capsid.schema import dumps, schemas
+
     for name, sch in schemas().items():
         out[f"schema/{name}"] = dumps(sch)
     out["catalog.json"] = json.dumps(build_catalog_dict(scan_recipes(recipes_dir)), indent=2) + "\n"
@@ -103,8 +120,11 @@ def main() -> int:
     if args.hub:
         copy_inputs(args.hub)
     rendered = render_all()
-    current = {str(p.relative_to(EXPECTED)): p.read_text()
-               for p in EXPECTED.rglob("*") if p.is_file()} if EXPECTED.exists() else {}
+    current = (
+        {str(p.relative_to(EXPECTED)): p.read_text() for p in EXPECTED.rglob("*") if p.is_file()}
+        if EXPECTED.exists()
+        else {}
+    )
     stale = sorted(k for k in rendered.keys() | current.keys() if rendered.get(k) != current.get(k))
     for k in stale:
         print(("+ " if k not in current else "- " if k not in rendered else "~ ") + k)

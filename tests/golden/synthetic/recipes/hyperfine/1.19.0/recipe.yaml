@@ -1,0 +1,17 @@
+name: hyperfine
+version: 1.19.0
+description: Command-line benchmarking tool, rust-cargo verification recipe
+license: MIT
+platforms: [linux/amd64]
+build:
+  type: rust-cargo
+  source: https://github.com/sharkdp/hyperfine/archive/refs/tags/v1.19.0.tar.gz
+  sha256: d1c782a54b9ebcdc1dedf8356a25ee11e11099a664a7d9413fdd3742138fa140
+test:
+  command: hyperfine --version && [ "$CAPSID_RANDOM_SEED" = 42 ] && cat input.txt > out.txt
+  expected_output: "hyperfine 1.19.0"
+  files:
+    input.txt: "hello\n"
+  output_file: out.txt
+  expected_checksum: 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03
+  random_seed: 42
