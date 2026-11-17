@@ -156,3 +156,57 @@ def test_image_page_usage_without_digest_uses_tag(tmp_path):
 def test_icosahedron_geometry():
     verts, edges = icosahedron()
     assert (len(verts), len(edges)) == (12, 30)
+
+
+def test_comparison_page_from_results(tmp_path):
+    hub = _hub(tmp_path)
+    img = {
+        "ref": "x",
+        "digest": "sha256:" + "0" * 64,
+        "platforms": ["linux/amd64", "linux/arm64"],
+        "layers": 3,
+        "compressed_bytes": 10_000_000,
+        "uncompressed_bytes": 30_000_000,
+        "user": "1000:1000",
+        "runs_as_root": False,
+        "cosign_signature": True,
+        "cosign_attestation": True,
+        "os": "debian 12.12",
+        "os_eosl": False,
+        "packages": 120,
+        "packages_os": 90,
+        "packages_lang": 30,
+        "vulnerabilities": {"CRITICAL": 0, "HIGH": 2, "MEDIUM": 5, "LOW": 9, "UNKNOWN": 0},
+    }
+    other = img | {
+        "user": "root (unset)",
+        "runs_as_root": True,
+        "cosign_signature": False,
+        "platforms": ["linux/amd64"],
+    }
+    (hub / "benchmarks").mkdir()
+    (hub / "benchmarks" / "results.json").write_text(
+        json.dumps(
+            {
+                "measured_at": "2026-01-02T00:00:00Z",
+                "platform": "linux/amd64",
+                "scanner": {"image": "aquasec/trivy:0.75.0", "version": {"Version": "0.75.0"}},
+                "sources": {"capsid": "Capsid", "other": "Other"},
+                "results": [
+                    {"tool": "demo", "version": "1.0", "images": {"capsid": img, "other": other}},
+                    {
+                        "tool": "tool1",
+                        "version": "1.0",
+                        "images": {"capsid": img, "other": {"ref": "y", "error": "gone"}},
+                    },
+                ],
+            }
+        )
+    )
+    out = tmp_path / "site"
+    build_site(hub, out, build_date="2026-01-01")
+    html = (out / "compare/index.html").read_text()
+    assert "measured on 2026-01-02" in html
+    assert "not measured: gone" in html
+    assert '<th scope="row">Capsid</th><td class="num">2</td>' in html
+    assert '<th scope="row">Other</th><td class="num">1</td>' in html

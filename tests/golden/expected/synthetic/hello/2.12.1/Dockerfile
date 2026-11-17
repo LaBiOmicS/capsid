@@ -161,7 +161,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
     "created": "2023-11-14T22:13:20Z",
     "creators": [
       "Tool: capsid-0.1.0",
-      "Organization: LaBiOmicS Capsid Project"
+      "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)"
     ]
   },
   "packages": [
@@ -174,7 +174,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
       "licenseDeclared": "GPL-3.0-or-later",
       "copyrightText": "NOASSERTION",
       "filesAnalyzed": false,
-      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "supplier": "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)",
       "description": "GNU Hello, autotools verification recipe"
     },
     {
@@ -395,7 +395,7 @@ LABEL org.opencontainers.image.title="hello" \
       org.opencontainers.image.description="GNU Hello, autotools verification recipe" \
       org.opencontainers.image.url="" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
-      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS, Universidade de Mogi das Cruzes (UMC)" \
       org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="autotools" \

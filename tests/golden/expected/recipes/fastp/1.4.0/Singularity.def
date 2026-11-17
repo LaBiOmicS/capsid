@@ -2,7 +2,7 @@ Bootstrap: docker
 From: ghcr.io/labiomics/capsid/fastp:1.4.0
 
 %labels
-    Author LaBiOmicS Capsid Project
+    Author LaBiOmicS, Universidade de Mogi das Cruzes (UMC)
     Version 1.4.0
     Tool fastp
 

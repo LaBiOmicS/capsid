@@ -171,7 +171,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
     "created": "2023-11-14T22:13:20Z",
     "creators": [
       "Tool: capsid-0.1.0",
-      "Organization: LaBiOmicS Capsid Project"
+      "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)"
     ]
   },
   "packages": [
@@ -184,7 +184,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
       "licenseDeclared": "MIT",
       "copyrightText": "NOASSERTION",
       "filesAnalyzed": false,
-      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "supplier": "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)",
       "description": "A cross-platform and ultrafast toolkit for FASTA/Q file manipulation."
     },
     {
@@ -444,7 +444,7 @@ LABEL org.opencontainers.image.title="seqkit" \
       org.opencontainers.image.description="A cross-platform and ultrafast toolkit for FASTA/Q file manipulation." \
       org.opencontainers.image.url="https://github.com/shenwei356/seqkit" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS, Universidade de Mogi das Cruzes (UMC)" \
       org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="pixi-conda" \

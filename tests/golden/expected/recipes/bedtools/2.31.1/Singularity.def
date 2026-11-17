@@ -2,7 +2,7 @@ Bootstrap: docker
 From: ghcr.io/labiomics/capsid/bedtools:2.31.1
 
 %labels
-    Author LaBiOmicS Capsid Project
+    Author LaBiOmicS, Universidade de Mogi das Cruzes (UMC)
     Version 2.31.1
     Tool bedtools
 

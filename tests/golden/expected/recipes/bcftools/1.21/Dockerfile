@@ -1136,7 +1136,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
     "created": "2023-11-14T22:13:20Z",
     "creators": [
       "Tool: capsid-0.1.0",
-      "Organization: LaBiOmicS Capsid Project"
+      "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)"
     ]
   },
   "packages": [
@@ -1149,7 +1149,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
       "licenseDeclared": "GPL-3.0-or-later",
       "copyrightText": "NOASSERTION",
       "filesAnalyzed": false,
-      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "supplier": "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)",
       "description": "BCFtools, utilities for manipulating variant calls in VCF and BCF formats."
     },
     {
@@ -3173,7 +3173,7 @@ LABEL org.opencontainers.image.title="bcftools" \
       org.opencontainers.image.description="BCFtools, utilities for manipulating variant calls in VCF and BCF formats." \
       org.opencontainers.image.url="https://github.com/samtools/bcftools" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
-      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS, Universidade de Mogi das Cruzes (UMC)" \
       org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="pixi-conda" \

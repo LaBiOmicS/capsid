@@ -149,7 +149,7 @@ not break reproducibility.
 | `org.opencontainers.image.description` | `description` |
 | `org.opencontainers.image.url` | `homepage` |
 | `org.opencontainers.image.licenses` | `license` |
-| `org.opencontainers.image.vendor` | `LaBiOmicS Capsid Project` |
+| `org.opencontainers.image.vendor` | `LaBiOmicS, Universidade de Mogi das Cruzes (UMC)` |
 | `org.opencontainers.image.source` | `https://github.com/LaBiOmicS/capsid-hub` (GitHub Container Registry links the package to this repository) |
 | `org.opencontainers.image.doi` | `doi`, if set |
 | `io.capsid.version` | Capsid version that generated the image |

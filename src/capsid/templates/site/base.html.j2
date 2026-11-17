@@ -28,6 +28,7 @@
     <a href="{{ root }}guide/using/index.html"{% if page.startswith("guide/using") %} aria-current="page"{% endif %}>Using</a>
     <a href="{{ root }}guide/contributing/index.html"{% if page.startswith("guide/contributing") %} aria-current="page"{% endif %}>Contributing</a>
     <a href="{{ root }}method/index.html"{% if section == "method" %} aria-current="page"{% endif %}>Method</a>
+    <a href="{{ root }}compare/index.html"{% if section == "compare" %} aria-current="page"{% endif %}>Comparison</a>
     <a href="{{ HUB_URL }}" class="ext">Source</a>
   </nav>
 </header>
@@ -38,6 +39,8 @@
 
 <footer class="colophon">
   <div>
+    <p class="sc">Origin</p>
+    <p>Developed at LaBiOmicS, Universidade de Mogi das Cruzes (UMC), Brazil.</p>
     <p class="sc">Colophon</p>
     <p>Compiled on {{ build_date }} by <a href="{{ ENGINE_URL }}">Capsid</a> {{ ENGINE_VERSION }} from the recipes and lockfiles in
       <a href="{{ HUB_URL }}">{{ HUB_REPO }}</a>. Every page is regenerated from those files; nothing here is edited by hand.</p>

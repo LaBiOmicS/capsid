@@ -82,3 +82,17 @@
 </tr>
 {% endfor %}
 {% endmacro %}
+
+{% macro refbox(img, hidden=False) %}
+{% set ref = img.pinned_ref %}{% set sif = img.name ~ "_" ~ img.version ~ ".sif" %}
+<table class="refbox" data-refbox="{{ img.version }}"{% if hidden %} hidden{% endif %}>
+  <tbody>
+    <tr><th scope="row">Docker</th><td>{{ code("docker pull " ~ ref) }}</td></tr>
+    <tr><th scope="row">Podman</th><td>{{ code("podman pull " ~ ref) }}</td></tr>
+    <tr><th scope="row">Apptainer</th><td>{{ code("apptainer pull " ~ sif ~ " docker://" ~ ref) }}</td></tr>
+    <tr><th scope="row">Singularity</th><td>{{ code("singularity pull " ~ sif ~ " docker://" ~ ref) }}</td></tr>
+    <tr><th scope="row">Nextflow</th><td>{{ code("container = '" ~ ref ~ "'") }}</td></tr>
+    <tr><th scope="row">Snakemake</th><td>{{ code("container: \"docker://" ~ ref ~ "\"") }}</td></tr>
+  </tbody>
+</table>
+{% endmacro %}

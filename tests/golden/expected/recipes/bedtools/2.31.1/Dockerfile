@@ -380,7 +380,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
     "created": "2023-11-14T22:13:20Z",
     "creators": [
       "Tool: capsid-0.1.0",
-      "Organization: LaBiOmicS Capsid Project"
+      "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)"
     ]
   },
   "packages": [
@@ -393,7 +393,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
       "licenseDeclared": "MIT",
       "copyrightText": "NOASSERTION",
       "filesAnalyzed": false,
-      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "supplier": "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)",
       "description": "A powerful toolset for genome arithmetic"
     },
     {
@@ -1045,7 +1045,7 @@ LABEL org.opencontainers.image.title="bedtools" \
       org.opencontainers.image.description="A powerful toolset for genome arithmetic" \
       org.opencontainers.image.url="http://bedtools.readthedocs.org/" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS, Universidade de Mogi das Cruzes (UMC)" \
       org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="pixi-conda" \

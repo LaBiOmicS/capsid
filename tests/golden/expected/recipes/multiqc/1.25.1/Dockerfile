@@ -1159,7 +1159,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
     "created": "2023-11-14T22:13:20Z",
     "creators": [
       "Tool: capsid-0.1.0",
-      "Organization: LaBiOmicS Capsid Project"
+      "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)"
     ]
   },
   "packages": [
@@ -1172,7 +1172,7 @@ COPY <<'EOF_SBOM' /etc/capsid/sbom.spdx.json
       "licenseDeclared": "GPL-3.0-only",
       "copyrightText": "NOASSERTION",
       "filesAnalyzed": false,
-      "supplier": "Organization: LaBiOmicS Capsid Project",
+      "supplier": "Organization: LaBiOmicS, Universidade de Mogi das Cruzes (UMC)",
       "description": "Create aggregate bioinformatics analysis reports across many samples and tools"
     },
     {
@@ -2608,7 +2608,7 @@ LABEL org.opencontainers.image.title="multiqc" \
       org.opencontainers.image.description="Create aggregate bioinformatics analysis reports across many samples and tools" \
       org.opencontainers.image.url="https://pypi.org/project/multiqc/" \
       org.opencontainers.image.licenses="GPL-3.0-only" \
-      org.opencontainers.image.vendor="LaBiOmicS Capsid Project" \
+      org.opencontainers.image.vendor="LaBiOmicS, Universidade de Mogi das Cruzes (UMC)" \
       org.opencontainers.image.source="https://github.com/LaBiOmicS/capsid-hub" \
       io.capsid.version="0.1.0" \
       io.capsid.engine="uv-pypi" \

@@ -2,7 +2,7 @@ Bootstrap: docker
 From: ghcr.io/labiomics/capsid/bwa:0.7.19
 
 %labels
-    Author LaBiOmicS Capsid Project
+    Author LaBiOmicS, Universidade de Mogi das Cruzes (UMC)
     Version 0.7.19
     Tool bwa
 

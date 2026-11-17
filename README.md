@@ -10,8 +10,9 @@ Capsid turns a short, declarative `recipe.yaml` into a small, non-root, multi-ar
 together with ready-to-use Nextflow, Snakemake and Apptainer integrations. Builds are pinned end to
 end, so the same recipe and lockfile produce the same image digest.
 
-Capsid is developed by [LaBiOmicS](https://github.com/LaBiOmicS). Community recipes and published
-images live in [Capsid Hub](https://github.com/LaBiOmicS/capsid-hub).
+Developed at [LaBiOmicS](https://github.com/LaBiOmicS), Universidade de Mogi das Cruzes (UMC), Brazil.
+Community recipes and published images live in [Capsid Hub](https://github.com/LaBiOmicS/capsid-hub);
+the hub website is <https://labiomics.github.io/capsid-hub/>.
 
 ---
 

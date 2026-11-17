@@ -202,6 +202,20 @@
     draw();
   });
 
+  /* ---------- tool page: version switch in the "Use" box ---------- */
+  document.querySelectorAll("[data-use]").forEach(function (box) {
+    var buttons = box.querySelectorAll("[data-version]");
+    var link = box.querySelector("[data-version-link]");
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () {
+        var v = b.getAttribute("data-version");
+        buttons.forEach(function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+        box.querySelectorAll("[data-refbox]").forEach(function (t) { t.hidden = t.getAttribute("data-refbox") !== v; });
+        if (link) link.href = link.href.replace(/\/[^\/]+\/index\.html$/, "/" + encodeURIComponent(v) + "/index.html");
+      });
+    });
+  });
+
   /* ---------- Fig. 1: rotating icosahedral capsid ---------- */
   var svg = document.querySelector("[data-capsid]");
   if (svg) {

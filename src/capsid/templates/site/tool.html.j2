@@ -1,4 +1,5 @@
 {% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
 {% block title %}{{ tool.name }} — Capsid Hub{% endblock %}
 {% block description %}{{ tool.description }}{% endblock %}
 {% block content %}
@@ -7,6 +8,20 @@
   <h1 class="mono-title">{{ tool.name }}</h1>
   <p class="lede">{{ tool.description }}</p>
 </header>
+
+<section class="use-box" aria-labelledby="use-title" data-use>
+  <div class="use-head">
+    <h2 id="use-title" class="sc">Use {{ tool.name }}</h2>
+    {% if tool.versions | length > 1 %}
+    <div class="segmented" role="group" aria-label="Version">
+      {% for v in tool.versions %}<button type="button" data-version="{{ v.version }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ v.version }}</button>{% endfor %}
+    </div>
+    {% else %}<span class="mono small">{{ tool.latest.version }}</span>{% endif %}
+  </div>
+  {% for v in tool.versions %}{{ m.refbox(v, hidden=not loop.first) }}{% endfor %}
+  <p class="use-note">{% if tool.latest.digest %}References are pinned by digest, so they always resolve to the same image.{% else %}Pin by digest for published work; see the version page.{% endif %}
+    Full commands, verification and the locked closure: <a href="{{ root }}{{ tool.latest.url }}" data-version-link>version page →</a></p>
+</section>
 
 <div class="split">
   <dl class="facts">

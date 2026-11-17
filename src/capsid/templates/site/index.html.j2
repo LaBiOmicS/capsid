@@ -12,6 +12,7 @@
       attested in public continuous integration, then pulled and tested again on native hardware of each
       architecture. This hub holds the recipes and documents, image by image, what was installed, how it
       was built and how to verify it.</p>
+    <p class="affiliation">Developed at LaBiOmicS, Universidade de Mogi das Cruzes (UMC), Brazil.</p>
     <p class="entry">
       <a href="catalogue/index.html" class="lead-link">Browse the catalogue</a>
       <span class="sep">or</span>
@@ -69,6 +70,9 @@
       <li><strong>The result is checked where it runs.</strong> After publication, the signed digest is pulled on
         native amd64 and arm64 machines and the recipe's acceptance test is run again.</li>
     </ol>
+    <p>How this differs from BioContainers, Seqera Containers and StaPH-B, what it means for reproducibility and
+      replicability, and how the images compare in size and known vulnerabilities, measured on the same tool versions:
+      <a href="compare/index.html">Capsid and other sources →</a></p>
   </div>
 </section>
 
@@ -92,13 +96,24 @@
 </section>
 
 <section class="numbered" id="catalogue">
-  <h2><span class="secno">4</span>Catalogue</h2>
+  <h2><span class="secno">4</span>The catalogue</h2>
   <div class="body">
-    <p>The catalogue is kept on its own page: {{ tools | length }} tools in {{ inventory.tool_images }} versions, searchable
-      and filterable, each version with a page giving its digest, usage, verification and locked closure.</p>
-    <p class="toolnames">{% for t in tools %}<a href="{{ t.url }}">{{ t.name }}</a>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}</p>
-    <p class="entry"><a href="catalogue/index.html" class="lead-link">Open the catalogue →</a>
-      {% if stacks %}<span class="sep">or</span><a href="stacks/index.html">the {{ stacks | length }} stacks</a>{% endif %}</p>
+    <p>The catalogue is the working index of the hub. Each tool has a page with the history of its versions, and
+      each version has its own page that answers the questions asked before using an image in an analysis:
+      which exact image it is (tag and digest), how to run it in Docker, Apptainer, Nextflow or Snakemake, how to
+      verify where it came from, and what it contains, package by package, with checksums and licences.</p>
+    <div class="specimens">
+    {% for t in specimens %}
+      <article class="specimen">
+        <p class="sc">{{ t.latest.build_type }}</p>
+        <h3><a href="{{ t.url }}">{{ t.name }}</a> <span class="ver">{{ t.latest.version }}</span></h3>
+        <p>{{ t.description }}</p>
+        <p class="meta">{{ t.latest.platforms | map("arch") | join(" · ") }} · {{ t.latest.closure_count }} locked artefacts · {{ t.license }}</p>
+      </article>
+    {% endfor %}
+    </div>
+    <p class="entry"><a href="catalogue/index.html" class="lead-link">Open the complete catalogue →</a>
+      <span class="sep">or</span><a href="stacks/index.html">browse the stacks</a></p>
   </div>
 </section>
 

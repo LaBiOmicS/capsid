@@ -2,7 +2,7 @@ Bootstrap: docker
 From: ghcr.io/labiomics/capsid/minimap2:2.28
 
 %labels
-    Author LaBiOmicS Capsid Project
+    Author LaBiOmicS, Universidade de Mogi das Cruzes (UMC)
     Version 2.28
     Tool minimap2
 

@@ -1,0 +1,280 @@
+{% extends "base.html.j2" %}
+{% block title %}Capsid and other container sources — Capsid Hub{% endblock %}
+{% block description %}How Capsid differs from BioContainers, Seqera Containers and StaPH-B, what a container can and cannot do for reproducibility, and a measured comparison of size and security.{% endblock %}
+{% macro pct(n, d) %}{{ n }}/{{ d }}{% endmacro %}
+{% block content %}
+<p class="return"><a href="{{ root }}index.html">← Return to the overview</a></p>
+<header class="page-head">
+  <p class="kicker sc">Capsid Hub · Comparison</p>
+  <h1>Capsid and other sources of bioinformatics containers</h1>
+  <p class="lede">What distinguishes Capsid from BioContainers, Seqera Containers and StaPH-B; what a container
+    contributes to reproducibility and replicability, and what it cannot; and a measurement of the same tool
+    versions from each source, for size and security.</p>
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <ol>
+    <li><a href="#sources">The sources</a></li>
+    <li><a href="#terms">Reproducible, replicable</a></li>
+    <li><a href="#mechanisms">How Capsid supports them</a></li>
+    <li><a href="#measured">Measured comparison</a></li>
+    <li><a href="#reading">Reading the numbers</a></li>
+    <li><a href="#choosing">Choosing a source</a></li>
+    <li><a href="#references">Sources and method</a></li>
+  </ol>
+</nav>
+
+<section class="numbered" id="sources">
+  <h2><span class="secno">1</span>The sources</h2>
+  <div class="body">
+    <p>Four public sources of ready-made images for bioinformatics tools differ mainly in <em>how</em> an image comes
+      into existence. The descriptions below are taken from each project's own documentation (numbered references in
+      <a href="#references">§7</a>).</p>
+    <table class="booktabs sources">
+      <caption><span class="figno">Table 1.</span> How images are produced.</caption>
+      <thead><tr><th>Source</th><th>How an image is made</th><th>Base</th><th>Coverage</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">BioContainers</th>
+          <td>Automatically, for every Bioconda package build: after <code>conda-build</code> succeeds, the package is added to a
+            minimal BusyBox container with <code>mulled-build</code>, the recipe tests are run in that container, and it is
+            uploaded to <code>quay.io/biocontainers</code>. Tags combine version and package build
+            (<code>1.25--h9dcdb79_0</code>).&nbsp;<sup>[1, 2]</sup></td>
+          <td>minimal BusyBox<sup>[2]</sup></td><td>over 8,000 packages<sup>[1]</sup></td></tr>
+        <tr><th scope="row">Seqera Containers</th>
+          <td>On demand, by the Wave service, from a list of Conda or PyPI packages; the default Conda template builds the
+            environment with Micromamba and copies it into a minimal base without the package manager.&nbsp;<sup>[3, 4]</sup></td>
+          <td>minimal base (template)<sup>[3]</sup></td><td>any Bioconda, conda-forge or PyPI package<sup>[4]</sup></td></tr>
+        <tr><th scope="row">StaPH-B</th>
+          <td>A hand-written Dockerfile per tool version, contributed by pull request, built and tested in GitHub Actions
+            (an <code>app</code> stage and a <code>test</code> stage), pushed to Docker Hub and Quay.&nbsp;<sup>[5, 6]</sup></td>
+          <td>usually <code>ubuntu:jammy</code><sup>[6]</sup></td><td>curated by the community</td></tr>
+        <tr><th scope="row">Capsid</th>
+          <td>From a reviewed recipe and a committed lockfile, in public CI: built per architecture, tested, signed with
+            Cosign, attested (SPDX SBOM, SLSA provenance), then pulled and tested again on native amd64 and arm64.
+            <a href="{{ root }}method/index.html">Method</a></td>
+          <td><code>debian:bookworm-slim</code> by digest, apt by snapshot</td><td>{{ inventory.tools }} tools (this hub)</td></tr>
+      </tbody>
+    </table>
+    <p>BioContainers and Seqera Containers are generated from package metadata and therefore cover almost everything
+      packaged in Bioconda; Capsid and StaPH-B are curated and cover far less. Capsid's narrower scope is the price of
+      reviewing each recipe and publishing, for every image, the evidence described in the next sections.</p>
+  </div>
+</section>
+
+<section class="numbered" id="terms">
+  <h2><span class="secno">2</span>Reproducible, replicable, robust</h2>
+  <div class="body">
+    <p>The terms are used inconsistently across fields. This page follows <em>The Turing Way</em><sup>[7]</sup>, which
+      classifies a result by whether the data and the analysis are the same as in the original work:</p>
+    <table class="booktabs matrix">
+      <caption><span class="figno">Table 2.</span> Definitions after <em>The Turing Way</em>.</caption>
+      <thead><tr><th></th><th>Same data</th><th>Different data</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Same analysis</th><td><strong>Reproducible</strong></td><td><strong>Replicable</strong></td></tr>
+        <tr><th scope="row">Different analysis</th><td><strong>Robust</strong></td><td><strong>Generalisable</strong></td></tr>
+      </tbody>
+    </table>
+    <p>A container addresses one ingredient of "the same analysis": the software environment. It cannot make a result
+      reproducible on its own (code, parameters, reference data and random seeds matter as much), but without a fixed
+      environment neither reproduction nor replication can attribute a difference in results to the data rather than to
+      changed software. For a container to serve that purpose, five properties matter:</p>
+    <ol class="propositions">
+      <li><strong>Identity.</strong> The reference used in an analysis must always resolve to the same bytes. Any OCI
+        registry supports this through digests; tags can be moved.</li>
+      <li><strong>Description.</strong> What the image contains, package by package, must be knowable without trusting
+        the image: otherwise "the same environment" cannot be stated in a methods section.</li>
+      <li><strong>Rebuildability.</strong> If the image disappears, it must be possible to rebuild it identically from
+        published inputs.</li>
+      <li><strong>Provenance.</strong> A user must be able to check that the image was produced by the process that
+        claims to have produced it.</li>
+      <li><strong>Portability.</strong> The same analysis should run on the hardware available, including ARM servers and
+        laptops, with the same software.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="numbered" id="mechanisms">
+  <h2><span class="secno">3</span>How Capsid supports each property</h2>
+  <div class="body">
+    <table class="booktabs">
+      <caption><span class="figno">Table 3.</span> Mechanisms in Capsid images, and their limits.</caption>
+      <thead><tr><th>Property</th><th>Mechanism</th><th>Limit</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Identity</th><td>Every image page and <code>catalog.json</code> give the digest; tags are only
+          moved by a documented republish of the runtime layer.</td><td>Users must reference the digest, not the tag.</td></tr>
+        <tr><th scope="row">Description</th><td>The lockfile (each package by URL and SHA-256) is committed, embedded in
+          the image and shown on the image page; an SPDX SBOM is embedded and attested.</td><td>The lockfile covers the tool's
+          environment; the Debian runtime is pinned by digest and snapshot and listed only in the SBOM.</td></tr>
+        <tr><th scope="row">Rebuildability</th><td>Recipe, lockfile and engine version determine the Dockerfile; base images
+          are pinned by digest, apt by snapshot date, timestamps by <code>SOURCE_DATE_EPOCH</code>.</td><td>Depends on upstream
+          artefacts remaining downloadable; source builds can embed build paths.</td></tr>
+        <tr><th scope="row">Provenance</th><td>Keyless Cosign signature bound to the publish workflow, logged in Rekor; SLSA
+          build provenance; both verifiable with one command each.</td><td>Proves where and how an image was built, not that
+          the upstream sources are sound.</td></tr>
+        <tr><th scope="row">Portability</th><td>linux/amd64 and linux/arm64 under one tag, solved from the same lockfile and
+          tested natively on both after publication.</td><td>The same versions on two architectures can still give
+          numerically different results (floating-point order, vector instructions); the acceptance test checks that the
+          tool works, not bit-identical output.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="numbered" id="measured">
+  <h2><span class="secno">4</span>Measured comparison</h2>
+  <div class="body">
+  {% if comparison %}
+    {% set src_label = comparison.sources %}
+    <p>The same tool versions were pulled from each source and measured on {{ comparison.measured_at[:10] }} for
+      <code>{{ comparison.platform }}</code>: size in the registry and on disk, the platforms offered under the
+      reference, the default user, the presence of a Cosign signature or attestation, and the packages and known
+      vulnerabilities reported by Trivy {{ (comparison.scanner.version or {}).get("Version", "") }}
+      {%- if (comparison.scanner.version or {}).get("VulnerabilityDB") %} (vulnerability database of
+      {{ comparison.scanner.version.VulnerabilityDB.UpdatedAt[:10] }}){% endif %}.
+      Seqera Containers are not included: their images are created on request by the service, so there is no
+      fixed set of published images to measure.</p>
+
+    <table class="booktabs summary">
+      <caption><span class="figno">Table 4.</span> Summary per source. Sizes and package counts are medians over the
+        images measured. Vulnerabilities are totals of distinct (vulnerability, package) pairs over the images Trivy
+        could assess (those with an operating-system package database); the figure after the slash is how many of them
+        had a fix available on the measurement date.</caption>
+      <thead>
+        <tr><th>Source</th><th class="num">Images</th><th class="num">Compressed</th><th class="num">On disk</th>
+          <th class="num">Packages</th><th class="num">arm64</th><th class="num">Non-root</th><th class="num">Signed</th>
+          <th class="num">Assessable</th><th class="num">Critical</th><th class="num">High</th><th class="num">Medium</th><th>Base OS</th></tr>
+      </thead>
+      <tbody>
+      {% for s in comparison.summary %}
+        <tr{% if s.source == "capsid" %} class="ours"{% endif %}>
+          <th scope="row">{{ s.label }}</th><td class="num">{{ s.n }}</td>
+          <td class="num">{{ s.compressed | bytes }}</td><td class="num">{{ s.uncompressed | bytes }}</td>
+          <td class="num">{{ s.packages | int }}</td>
+          <td class="num">{{ pct(s.arm64, s.n) }}</td><td class="num">{{ pct(s.nonroot, s.n) }}</td><td class="num">{{ pct(s.signed, s.n) }}</td>
+          <td class="num">{{ pct(s.assessed, s.n) }}</td>
+          {% if s.assessed %}
+          <td class="num">{{ s.vulns.CRITICAL }}<span class="fix">/{{ s.fixable.CRITICAL }}</span></td>
+          <td class="num">{{ s.vulns.HIGH }}<span class="fix">/{{ s.fixable.HIGH }}</span></td>
+          <td class="num">{{ s.vulns.MEDIUM }}<span class="fix">/{{ s.fixable.MEDIUM }}</span></td>
+          {% else %}<td class="num muted" colspan="3">not assessable</td>{% endif %}
+          <td class="small">{{ s.os | join("; ") }}{% if s.eosl %} <span class="flag">end of life: {{ s.eosl }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <table class="booktabs per-tool">
+      <caption><span class="figno">Table 5.</span> Per image. Size compressed / on disk; vulnerabilities as
+        critical · high · medium, with the number that had a fix available in brackets; ✓ present, — absent.</caption>
+      <thead><tr><th>Tool</th><th>Source</th><th class="num">Size</th><th>Arch.</th><th>User</th><th>Signed</th>
+        <th class="num">Pkgs</th><th class="num">C · H · M</th><th>Base OS</th></tr></thead>
+      <tbody>
+      {% for r in comparison.results %}
+        {% for key in comparison.source_keys if key in r.images %}
+        {% set i = r.images[key] %}
+        <tr class="{{ 'group-start' if loop.first else '' }}{{ ' ours' if key == 'capsid' else '' }}">
+          {% if loop.first %}<th scope="rowgroup" rowspan="{{ r.images | length }}" class="mono">{{ r.tool }}<span class="desc">{{ r.version }}</span></th>{% endif %}
+          <td>{{ src_label[key] }}</td>
+          {% if i.error is defined %}
+          <td colspan="7" class="muted small">not measured: {{ i.error }}</td>
+          {% else %}
+          <td class="num small">{{ i.compressed_bytes | bytes }} / {{ i.uncompressed_bytes | bytes }}</td>
+          <td class="mono small">{{ i.platforms | map("arch") | join(" ") }}</td>
+          <td class="mono small">{{ i.user }}</td>
+          <td>{{ "✓" if i.cosign_signature else "—" }}</td>
+          <td class="num">{{ i.packages }}</td>
+          {% set fx = i.vulnerabilities_fixable %}
+          <td class="num mono small">{% if i.os_package_db %}{{ i.vulnerabilities.CRITICAL }} · {{ i.vulnerabilities.HIGH }} · {{ i.vulnerabilities.MEDIUM }}
+            <span class="fix">({{ fx.get("CRITICAL", 0) + fx.get("HIGH", 0) + fx.get("MEDIUM", 0) }})</span>{% else %}<span class="muted">not assessable</span>{% endif %}</td>
+          <td class="small">{{ i.os }}{% if not i.os_package_db %} <span class="muted">(no package database)</span>{% endif %}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    <h3>Findings</h3>
+    <ul class="plain findings">
+    {% for s in comparison.summary %}
+      <li><strong>{{ s.label }}.</strong> Median {{ s.compressed | bytes }} compressed ({{ s.uncompressed | bytes }} on disk);
+        arm64 under the same reference in {{ s.arm64 }} of {{ s.n }} images; non-root default user in {{ s.nonroot }};
+        Cosign signature in {{ s.signed }}.
+        {% if s.assessed %}Across the {{ s.assessed }} assessable image{{ "" if s.assessed == 1 else "s" }},
+        {{ s.vulns.CRITICAL + s.vulns.HIGH }} critical or high findings, of which {{ s.fixable.CRITICAL + s.fixable.HIGH }}
+        had a fix available.{% else %}No image could be assessed for system vulnerabilities.{% endif %}</li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No measurement has been recorded in this hub (<code>benchmarks/results.json</code>).</p>
+  {% endif %}
+  </div>
+</section>
+
+<section class="numbered" id="reading">
+  <h2><span class="secno">5</span>Reading the numbers</h2>
+  <div class="body">
+    <ul class="plain">
+      <li><strong>A scanner reports what it can recognise.</strong> Trivy finds operating-system vulnerabilities through
+        the base distribution's package database. Most BioContainers images measured here combine a BusyBox userland with a
+        Debian <code>/etc/os-release</code> but no <code>dpkg</code> database, so Trivy has no list of system packages to
+        check: they are <em>not assessable</em>, not verified clean (Table 4, column <em>Assessable</em>). Tables 4 and 5 therefore count vulnerabilities only for
+        images with a package database.</li>
+      <li><strong>The tools themselves are hardly covered.</strong> Trivy listed the Conda packages it found (in Capsid
+        images, for example, every package of the lockfile) but reported no vulnerability for any Conda package in any
+        source. The findings concern the base system, Python packages and statically linked Go binaries, not the compiled
+        bioinformatics tools.</li>
+      <li><strong>Known is not fixable.</strong> Debian and Ubuntu record many vulnerabilities as <em>affected</em>,
+        <em>fix deferred</em> or <em>will not fix</em>; no updated package exists for them. The number with a fix available
+        is what rebuilding an image can remove. Counts also depend on the distribution's own severity ratings, which differ
+        between Debian and Ubuntu for the same flaw, and change daily with the database date above. They measure exposure,
+        not exploitability.</li>
+      <li><strong>Size has a cause.</strong> Capsid's runtime is a Debian slim base with <code>bash</code>, <code>tini</code>
+        and CA certificates added, chosen so that images behave like a normal Linux system under Nextflow, Snakemake and
+        Apptainer. A BusyBox base is smaller; an Ubuntu base with build tools left in place is larger.</li>
+      <li><strong>"Signed" means a Cosign signature in the same repository</strong> (<code>sha256-&lt;digest&gt;.sig</code>).
+        Other signing schemes would not be detected; none is described in the documentation of the other sources<sup>[1–6]</sup>.</li>
+      <li><strong>"Non-root"</strong> is the image's default user. Every image can be run as another user with
+        <code>-u</code>; the default matters where a platform refuses root containers.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="numbered" id="choosing">
+  <h2><span class="secno">6</span>Choosing a source</h2>
+  <div class="body">
+    <table class="booktabs">
+      <thead><tr><th>If you need</th><th>Prefer</th></tr></thead>
+      <tbody>
+        <tr><td>a tool that is not in a curated collection</td><td>BioContainers (any Bioconda package) or Seqera Containers (any combination of packages)</td></tr>
+        <tr><td>several tools in one image, assembled ad hoc</td><td>Seqera Containers, or a Capsid stack if the tools are in this hub</td></tr>
+        <tr><td>public-health pipelines already built on them</td><td>StaPH-B</td></tr>
+        <tr><td>a published, checkable record of every package, signature and build provenance, ARM64 under the same tag, a non-root default user</td><td>Capsid</td></tr>
+      </tbody>
+    </table>
+    <p>The sources are not exclusive: a pipeline can take most images from BioContainers and pin the steps whose
+      environment must be documented to Capsid images. Missing tools can be <a href="{{ root }}guide/contributing/index.html">proposed</a>.</p>
+  </div>
+</section>
+
+<section class="numbered" id="references">
+  <h2><span class="secno">7</span>Sources and method</h2>
+  <div class="body">
+    <ol class="refs">
+      <li>Bioconda. <a href="https://bioconda.github.io/">bioconda.github.io</a></li>
+      <li>Bioconda, build system. <a href="https://bioconda.github.io/contributor/build-system.html">bioconda.github.io/contributor/build-system.html</a></li>
+      <li>Seqera, Wave containers in Nextflow. <a href="https://docs.seqera.io/nextflow/wave">docs.seqera.io/nextflow/wave</a></li>
+      <li>Seqera Containers. <a href="https://seqera.io/containers/">seqera.io/containers</a></li>
+      <li>StaPH-B docker-builds. <a href="https://github.com/StaPH-B/docker-builds">github.com/StaPH-B/docker-builds</a></li>
+      <li>StaPH-B, making containers. <a href="https://staphb.org/docker-builds/make_containers/">staphb.org/docker-builds/make_containers</a></li>
+      <li>The Turing Way Community, definitions of reproducibility. <a href="https://book.the-turing-way.org/reproducible-research/overview/overview-definitions">book.the-turing-way.org</a></li>
+    </ol>
+    <p>Documentation was consulted on 2026-11-17. The measurement is reproducible: the image list is
+      <a href="{{ HUB_URL }}/blob/main/benchmarks/images.yaml"><code>benchmarks/images.yaml</code></a>, the raw results
+      <a href="{{ HUB_URL }}/blob/main/benchmarks/results.json"><code>benchmarks/results.json</code></a>, and the script
+      <a href="{{ ENGINE_URL }}/blob/main/scripts/compare_images.py"><code>scripts/compare_images.py</code></a>:</p>
+    <pre class="plainpre"><code>python3 scripts/compare_images.py benchmarks/images.yaml --out benchmarks/results.json</code></pre>
+  </div>
+</section>
+
+<p class="return end"><a href="{{ root }}index.html">← Return to the overview</a></p>
+{% endblock %}

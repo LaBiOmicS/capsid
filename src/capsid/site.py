@@ -423,6 +423,62 @@ def _root(rel: str) -> str:
     return "../" * rel.count("/")
 
 
+def _median(values: list[float]) -> float | None:
+    v = sorted(values)
+    if not v:
+        return None
+    mid = len(v) // 2
+    return v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2
+
+
+def load_comparison(hub: Path) -> dict[str, Any] | None:
+    """Read benchmarks/results.json (written by scripts/compare_images.py) and add per-source aggregates."""
+    path = hub / "benchmarks" / "results.json"
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text())
+    sources = list(data.get("sources") or {})
+    summary = []
+    for src in sources:
+        ok = [r["images"][src] for r in data["results"] if src in r["images"] and "error" not in r["images"][src]]
+        if not ok:
+            continue
+        for i in ok:
+            i.setdefault("os_package_db", i.get("packages_os", 0) > 0)
+            i.setdefault("vulnerabilities_fixable", {})
+        assessed = [i for i in ok if i["os_package_db"]]
+        sev = {s: sum(i["vulnerabilities"].get(s, 0) for i in assessed) for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+        fix = {
+            s: sum(i["vulnerabilities_fixable"].get(s, 0) for i in assessed)
+            for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+        }
+        summary.append(
+            {
+                "source": src,
+                "label": data["sources"][src],
+                "n": len(ok),
+                "compressed": _median([i["compressed_bytes"] for i in ok]),
+                "uncompressed": _median([i["uncompressed_bytes"] for i in ok]),
+                "packages": _median([i["packages"] for i in ok]),
+                "arm64": sum(1 for i in ok if any(p.startswith("linux/arm64") for p in i["platforms"])),
+                "nonroot": sum(1 for i in ok if not i["runs_as_root"]),
+                "signed": sum(1 for i in ok if i["cosign_signature"]),
+                "attested": sum(1 for i in ok if i["cosign_attestation"]),
+                "vulns": sev,
+                "fixable": fix,
+                "assessed": len(assessed),
+                "vulns_median_ch": _median(
+                    [i["vulnerabilities"].get("CRITICAL", 0) + i["vulnerabilities"].get("HIGH", 0) for i in assessed]
+                ),
+                "os": sorted({i["os"] for i in ok}),
+                "eosl": sum(1 for i in ok if i.get("os_eosl")),
+            }
+        )
+    data["summary"] = summary
+    data["source_keys"] = sources
+    return data
+
+
 def _script_json(value: Any) -> str:
     """JSON safe to embed in a <script type="application/json"> element."""
     text = json.dumps(value, separators=(",", ":"))
@@ -491,7 +547,17 @@ def build_site(
 
     # Presentation page
     example = next((i for t in tools for i in t.versions if t.name == "samtools"), images[0] if images else None)
-    render("index.html.j2", "index.html", tools=tools, stacks=stacks, example=example, capsid_lines=capsid_svg_lines())
+    by_name = {t.name: t for t in tools}
+    specimens = [by_name[n] for n in ("samtools", "minimap2", "multiqc") if n in by_name] or tools[:3]
+    render(
+        "index.html.j2",
+        "index.html",
+        tools=tools,
+        stacks=stacks,
+        example=example,
+        specimens=specimens,
+        capsid_lines=capsid_svg_lines(),
+    )
 
     # Catalogue, statically paginated; site.js adds search and filters over the full index
     index = [_index_row(t) for t in tools]
@@ -531,6 +597,7 @@ def build_site(
         render("image.html.j2", s.url, img=s, tool=None, tools=tool_by_name, closure_json=_closure_json(s))
 
     render("about.html.j2", "method/index.html")
+    render("compare.html.j2", "compare/index.html", comparison=load_comparison(hub))
     render("using.html.j2", "guide/using/index.html")
     render("contributing.html.j2", "guide/contributing/index.html")
 

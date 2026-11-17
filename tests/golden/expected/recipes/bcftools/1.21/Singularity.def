@@ -2,7 +2,7 @@ Bootstrap: docker
 From: ghcr.io/labiomics/capsid/bcftools:1.21
 
 %labels
-    Author LaBiOmicS Capsid Project
+    Author LaBiOmicS, Universidade de Mogi das Cruzes (UMC)
     Version 1.21
     Tool bcftools
 
