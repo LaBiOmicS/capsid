@@ -154,7 +154,7 @@
       dyn.innerHTML = slice.length ? slice.map(function (t) { return row(t, q); }).join("")
         : '<tr><td colspan="6" class="muted">No tool matches. Missing one? <a href="https://github.com/LaBiOmicS/capsid-hub/issues/new/choose">Propose a recipe</a>.</td></tr>';
       status.textContent = hits.length
-        ? "Showing " + ((page - 1) * size + 1) + "–" + ((page - 1) * size + slice.length) + " of " + hits.length + " matching tools (" + index.length + " in total)."
+        ? "Showing " + ((page - 1) * size + 1) + "–" + ((page - 1) * size + slice.length) + " of " + hits.length + " matching tools (" + index.length + " in total); page " + page + " of " + pages + "."
         : "0 of " + index.length + " tools match.";
       renderPager(dynPager, page, pages, function (n) { page = n; update(false); cat.scrollIntoView({ block: "start" }); });
     }

@@ -110,6 +110,19 @@ figcaption { font-size: 0.86rem; color: var(--ink-2); line-height: 1.45; margin-
 .fig-capsid figcaption { max-width: 22rem; margin-inline: auto; }
 .hint { color: var(--muted); font-style: italic; }
 
+/* ---- catalogue page ---- */
+.return { font-size: 0.92rem; margin: 0 0 1.6rem; }
+.return a { text-decoration: none; }
+.return a:hover { text-decoration: underline; }
+.return.end { margin: 3rem 0 0; padding-top: 1rem; border-top: 1px solid var(--hair); }
+.fig-composition { align-self: start; }
+.fig-composition table.composition { margin: 0 0 1rem; }
+.fig-composition table.composition thead th { font-variant: all-small-caps; letter-spacing: 0.05em; }
+.fig-composition .bar-cell { width: 45%; }
+dl.facts.legend { gap: 0.55rem 1.4rem; margin-bottom: 1.4rem; max-width: 48rem; }
+.toolnames { font-family: var(--mono); font-size: 0.9rem; line-height: 2; max-width: var(--measure); }
+.toolnames .sep { margin: 0 0.45rem; }
+
 /* ---- numbered sections: number in the margin column ---- */
 .numbered {
   display: grid; grid-template-columns: var(--margin) minmax(0, 1fr); column-gap: var(--gutter);

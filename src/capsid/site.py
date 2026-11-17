@@ -497,6 +497,12 @@ def build_site(
     index = [_index_row(t) for t in tools]
     categories = sorted({c for t in tools for c in t.categories})
     builds = sorted({t.latest.build_type for t in tools})
+    multi = sum(1 for t in tools if len(t.latest.platforms) > 1)
+    composition = [
+        ("Build", Counter(t.latest.build_type for t in tools).most_common()),
+        ("Architectures", [(k, n) for k, n in (("amd64 + arm64", multi), ("amd64 only", len(tools) - multi)) if n]),
+        ("Licence", Counter(t.license for t in tools).most_common()),
+    ]
     for n in range(1, pages_n + 1):
         rel = "catalogue/index.html" if n == 1 else f"catalogue/page/{n}/index.html"
         render(
@@ -510,6 +516,8 @@ def build_site(
             index_json=_script_json(index),
             categories=categories,
             builds=builds,
+            composition=composition,
+            stacks_n=len(stacks),
         )
 
     for t in tools:

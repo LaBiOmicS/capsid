@@ -127,7 +127,8 @@ def test_build_site_pages_pagination_and_relative_links(tmp_path):
 
     page2 = (out / "catalogue/page/2/index.html").read_text()
     assert 'rel="prev"' in page2 and 'rel="next"' in page2
-    assert "Showing 3\u20134 of 5." in page2
+    assert "Showing 3\u20134 of 5; page 2 of 3." in page2
+    assert 'href="../../../index.html">\u2190 Return to the overview' in page2
 
 
 def test_untrusted_text_is_escaped(tmp_path):
