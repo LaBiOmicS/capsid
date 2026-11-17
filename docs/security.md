@@ -137,8 +137,9 @@ cosign verify "$IMAGE" \
   --certificate-identity-regexp '^https://github.com/LaBiOmicS/capsid-hub/\.github/workflows/publish-release\.yaml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-# SBOM attestation (SPDX, scanned from the pushed image)
-cosign verify-attestation --type spdxjson "$IMAGE" \
+# SBOM attestation (SPDX, scanned from the pushed image).
+# The hub signs with Cosign 2; Cosign 3 needs --new-bundle-format=false to find this attestation.
+cosign verify-attestation --new-bundle-format=false --type spdxjson "$IMAGE" \
   --certificate-identity-regexp '^https://github.com/LaBiOmicS/capsid-hub/\.github/workflows/publish-release\.yaml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   | jq -r .payload | base64 -d | jq '.predicate.packages | length'
