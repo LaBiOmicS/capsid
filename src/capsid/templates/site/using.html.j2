@@ -1,0 +1,180 @@
+{% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
+{% block title %}Using the images — Capsid Hub{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> / Guides / Using the images</p>
+  <h1>Using the images</h1>
+  <p class="lede">From a first <code>docker run</code> to a pipeline on an HPC cluster without internet access. Every
+    image page in the <a href="{{ root }}catalogue/index.html">catalogue</a> repeats the commands below with its own
+    reference filled in.</p>
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <ol>
+    <li><a href="#references">References</a></li>
+    <li><a href="#local">Docker and Podman</a></li>
+    <li><a href="#apptainer">Apptainer</a></li>
+    <li><a href="#nextflow">Nextflow</a></li>
+    <li><a href="#snakemake">Snakemake</a></li>
+    <li><a href="#hpc">HPC clusters</a></li>
+    <li><a href="#cloud">Kubernetes and cloud</a></li>
+    <li><a href="#stacks">Stacks</a></li>
+    <li><a href="#reporting">Reporting in a paper</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ol>
+</nav>
+
+<section class="numbered" id="references">
+  <h2><span class="secno">1</span>Image references</h2>
+  <div class="body">
+{{ m.code(REGISTRY ~ "/<tool>:<version>          # one tool version\n" ~ REGISTRY ~ "/<stack>:<version>         # a stack of tools\n" ~ REGISTRY ~ "/<tool>@sha256:<digest>    # immutable", "text") }}
+    <p>Each reference is a multi-architecture index: the runtime picks <code>linux/amd64</code> or
+      <code>linux/arm64</code> (Apple silicon, AWS Graviton, Ampere) automatically. A tag can be republished after a
+      security update of the runtime layer; a digest cannot. Use tags while developing and digests in anything you
+      publish. Image pages list both; <a href="{{ root }}catalog.json"><code>catalog.json</code></a> lists every
+      reference for scripts.</p>
+    <p>There is no <code>latest</code> tag. A pipeline always names the version it was validated with.</p>
+  </div>
+</section>
+
+<section class="numbered" id="local">
+  <h2><span class="secno">2</span>Docker and Podman</h2>
+  <div class="body">
+{{ m.code("docker run --rm -u \"$(id -u):$(id -g)\" -v \"$PWD:/data\" -w /data \\\n  " ~ REGISTRY ~ "/samtools:1.25 \\\n  samtools flagstat sample.bam", "sh") }}
+    <ul class="plain">
+      <li><code>-u "$(id -u):$(id -g)"</code> writes output files as you rather than as the image user (1000).</li>
+      <li><code>-v "$PWD:/data" -w /data</code> mounts the current directory and runs from it.</li>
+      <li>Podman accepts the same flags; in rootless Podman, <code>--userns=keep-id</code> replaces <code>-u</code>.</li>
+      <li>For an interactive shell: <code>docker run --rm -it … bash</code>.</li>
+    </ul>
+    <p>Each image documents itself. These files are inside every image:</p>
+    <table class="booktabs">
+      <thead><tr><th>Path</th><th>Content</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">/etc/capsid/recipe.yaml</td><td>the recipe the image was built from</td></tr>
+        <tr><td class="mono">/etc/capsid/pixi.lock, requirements.lock</td><td>the locked closure</td></tr>
+        <tr><td class="mono">/etc/capsid/sbom.spdx.json</td><td>SPDX 2.3 software bill of materials</td></tr>
+        <tr><td class="mono">/etc/capsid/ro-crate-metadata.json</td><td>RO-Crate (JSON-LD) description for FAIR archiving</td></tr>
+        <tr><td class="mono">/etc/capsid/module.nf, rule.smk</td><td>a Nextflow module and a Snakemake rule for the image</td></tr>
+      </tbody>
+    </table>
+{{ m.code("docker run --rm " ~ REGISTRY ~ "/samtools:1.25 cat /etc/capsid/recipe.yaml", "sh") }}
+  </div>
+</section>
+
+<section class="numbered" id="apptainer">
+  <h2><span class="secno">3</span>Apptainer and Singularity</h2>
+  <div class="body">
+    <p>Run straight from the registry (Apptainer converts and caches the image), or convert once into a SIF file:</p>
+{{ m.code("apptainer exec docker://" ~ REGISTRY ~ "/samtools:1.25 samtools --version\n\napptainer pull samtools-1.25.sif docker://" ~ REGISTRY ~ "/samtools:1.25\napptainer exec --cleanenv -B /scratch samtools-1.25.sif samtools --version", "sh") }}
+    <p>Images work under <code>--cleanenv</code> and <code>--containall</code> because <code>PATH</code> is set inside
+      the image, and under any UID because tool trees are world-readable and caches go to <code>/tmp</code>.
+      <code>capsid export def &lt;tool&gt;@&lt;version&gt;</code> writes a definition file with a <code>%test</code>
+      section for sites that build SIF images from definitions.</p>
+  </div>
+</section>
+
+<section class="numbered" id="nextflow">
+  <h2><span class="secno">4</span>Nextflow</h2>
+  <div class="body">
+    <p>Assigning an image to processes needs one block in <code>nextflow.config</code>:</p>
+{{ m.code("process {\n    withName: 'SAMTOOLS_SORT|SAMTOOLS_INDEX' {\n        container = '" ~ REGISTRY ~ "/samtools:1.25'\n    }\n}", "groovy") }}
+    <p>The CLI can generate an nf-core-style module (inputs <code>tuple val(meta), path(reads)</code>, <code>task.ext.args</code>,
+      <code>versions.yml</code>, <code>stub</code>) and a configuration with one profile per runtime:</p>
+{{ m.code("capsid export nextflow samtools@1.25 --out modules/local/samtools.nf\ncapsid export config --target samtools@1.25 --out nextflow.config\n\nnextflow run main.nf -profile docker\nnextflow run main.nf -profile apptainer\nnextflow run main.nf -profile slurm,apptainer", "sh") }}
+    <table class="booktabs">
+      <thead><tr><th>Profile</th><th>Settings</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">docker</td><td><code>docker.enabled</code>; runs as the calling user</td></tr>
+        <tr><td class="mono">podman</td><td><code>podman.enabled</code></td></tr>
+        <tr><td class="mono">apptainer, singularity</td><td>enabled with <code>autoMounts</code>; add binds in <code>runOptions</code></td></tr>
+        <tr><td class="mono">slurm</td><td><code>process.executor = 'slurm'</code>; set queue and account in the commented lines</td></tr>
+      </tbody>
+    </table>
+    <p>The generated module's script is a template (<code>&lt;tool&gt; $args $reads &gt; prefix.out</code>): edit inputs,
+      outputs and the command for your step.</p>
+  </div>
+</section>
+
+<section class="numbered" id="snakemake">
+  <h2><span class="secno">5</span>Snakemake</h2>
+  <div class="body">
+{{ m.code("rule bwa_mem:\n    input: ref=\"ref.fa\", reads=\"reads/{sample}.fq.gz\"\n    output: \"aligned/{sample}.sam\"\n    threads: 8\n    container: \"docker://" ~ REGISTRY ~ "/bwa:0.7.19\"\n    shell: \"bwa mem -t {threads} {input.ref} {input.reads} > {output}\"", "python") }}
+{{ m.code("snakemake --sdm apptainer --cores 8\nsnakemake --sdm apptainer --apptainer-args \"-B /scratch\" --cores 8\n\ncapsid export snakemake bwa@0.7.19 --out rules/bwa.smk   # a complete rule to adapt", "sh") }}
+    <p>Snakemake runs containers through Apptainer. <code>--sdm</code> is the short form of
+      <code>--software-deployment-method</code> (Snakemake ≥ 8).</p>
+  </div>
+</section>
+
+<section class="numbered" id="hpc">
+  <h2><span class="secno">6</span>HPC clusters</h2>
+  <div class="body">
+    <ul class="plain">
+      <li><strong>Bind points exist.</strong> <code>/scratch</code>, <code>/data</code>, <code>/work</code>, <code>/lustre</code>
+        and <code>/shared</code> are present in every image, so <code>-B /scratch</code> works even with read-only images.</li>
+      <li><strong>Offline compute nodes.</strong> Pull SIF files on a login node, or mirror images to an internal registry
+        with all architectures and the original digest, so they can still be verified against this hub's signatures:</li>
+    </ul>
+{{ m.code("skopeo copy --all docker://" ~ REGISTRY ~ "/samtools:1.25 \\\n  docker://registry.example.org/capsid/samtools:1.25", "sh") }}
+    <ul class="plain">
+      <li><strong>Test on the cluster</strong> with the recipe's own acceptance test:
+        <code>capsid test recipes/samtools/1.25/recipe.yaml --engine apptainer --sif samtools-1.25.sif</code>.</li>
+      <li><strong>Single node.</strong> Images do not carry an MPI stack matched to the host; MPI tools are out of scope.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="numbered" id="cloud">
+  <h2><span class="secno">7</span>Kubernetes and cloud batch</h2>
+  <div class="body">
+    <p>Images satisfy restrictive pod security settings as they are. The same holds for AWS Batch, Google Batch,
+      Azure Batch and Nextflow's cloud executors.</p>
+{{ m.code("securityContext:\n  runAsNonRoot: true\n  runAsUser: 1000\n  readOnlyRootFilesystem: true      # mount an emptyDir at /tmp\n  allowPrivilegeEscalation: false\n  capabilities: {drop: [ALL]}", "yaml") }}
+    <p>Clusters can refuse unsigned images at admission with the Sigstore policy-controller or Kyverno, using the
+      identity shown in each image page's <em>Verification</em> section.</p>
+  </div>
+</section>
+
+<section class="numbered" id="stacks">
+  <h2><span class="secno">8</span>Stacks</h2>
+  <div class="body">
+    <p>A <a href="{{ root }}stacks/index.html">stack</a> lets one process pipe several tools together without staging
+      intermediate files between containers:</p>
+{{ m.code("process CALL_VARIANTS {\n    container '" ~ REGISTRY ~ "/variant-calling-stack:1.0.0'\n    script:\n    \"\"\"\n    samtools sort -@ ${task.cpus} ${bam} | bcftools mpileup -f ${ref} - | bcftools call -mv -Oz -o calls.vcf.gz\n    \"\"\"\n}", "groovy") }}
+    <p>Prefer single-tool images otherwise: they are smaller and cached across pipelines.</p>
+  </div>
+</section>
+
+<section class="numbered" id="reporting">
+  <h2><span class="secno">9</span>Reporting in a paper</h2>
+  <div class="body">
+    <p>For a methods section, name the tool, its version and the image digest. The digest identifies the exact
+      closure listed on the image page and inside the image, and stays resolvable after the tag moves:</p>
+    <blockquote class="quote">Reads were aligned with BWA 0.7.19 and sorted with SAMtools 1.25, run from the Capsid images
+      <code>{{ REGISTRY }}/bwa@sha256:…</code> and <code>{{ REGISTRY }}/samtools@sha256:…</code>
+      (recipes and lockfiles at {{ HUB_URL | replace("https://", "") }}).</blockquote>
+    <p>To archive the environment with the data, deposit the image's <code>/etc/capsid/ro-crate-metadata.json</code>
+      and <code>sbom.spdx.json</code>, or the SIF file itself, in the same repository as the results.</p>
+  </div>
+</section>
+
+<section class="numbered" id="troubleshooting">
+  <h2><span class="secno">10</span>Troubleshooting</h2>
+  <div class="body">
+    <dl class="qa">
+      <dt>Output files belong to user 1000.</dt>
+      <dd>Run with <code>-u "$(id -u):$(id -g)"</code> (Docker) or <code>--userns=keep-id</code> (rootless Podman). Apptainer runs as you.</dd>
+      <dt><code>Permission denied</code> writing into the image.</dt>
+      <dd>Tool directories are read-only by design. Write to a mounted directory or to <code>/tmp</code>.</dd>
+      <dt><code>no matching manifest for linux/arm64/v8 in the manifest list entries</code>.</dt>
+      <dd>The recipe declares only <code>linux/amd64</code>; the image page lists the architectures. Use an amd64 machine, or propose arm64 support.</dd>
+      <dt>Apptainer cannot find files outside the working directory.</dt>
+      <dd>Bind them: <code>-B /path</code>, or <code>runOptions = '-B /path'</code> in Nextflow, or <code>--apptainer-args "-B /path"</code> in Snakemake.</dd>
+      <dt>A tool or version is missing.</dt>
+      <dd><a href="{{ root }}guide/contributing/index.html">Submit it</a>, or open an issue with the
+        <a href="{{ HUB_URL }}/issues/new/choose">New recipe</a> form.</dd>
+    </dl>
+  </div>
+</section>
+{% endblock %}

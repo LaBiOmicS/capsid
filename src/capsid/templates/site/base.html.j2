@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Capsid Hub{% endblock %}</title>
+<meta name="description" content="{% block description %}Reproducible, signed, multi-architecture container images for bioinformatics tools, built from locked dependency closures.{% endblock %}">
+<link rel="icon" href="{{ root }}assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<link rel="stylesheet" href="{{ root }}assets/site.css">
+<script src="{{ root }}assets/site.js" defer></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-line">
+    <span class="sc">Capsid Hub</span>
+    <span class="masthead-meta">{{ inventory.images }} images · {{ inventory.artefacts }} locked artefacts · compiled {{ build_date }}</span>
+  </div>
+  <nav class="primary" aria-label="Site">
+    <a href="{{ root }}index.html" class="wordmark"{% if page == "index.html" %} aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><polygon points="12,2 20.7,7 20.7,17 12,22 3.3,17 3.3,7"/><polyline points="12,2 12,8.5 20.7,7"/><polyline points="12,8.5 3.3,7"/><polygon points="12,8.5 17,16 7,16"/><polyline points="7,16 3.3,17"/><polyline points="17,16 20.7,17"/><polyline points="7,16 12,22 17,16"/></g></svg>Capsid
+    </a>
+    {% set section = page.split("/")[0] %}
+    <a href="{{ root }}catalogue/index.html"{% if section in ("catalogue", "tools") %} aria-current="page"{% endif %}>Catalogue</a>
+    <a href="{{ root }}stacks/index.html"{% if section == "stacks" %} aria-current="page"{% endif %}>Stacks</a>
+    <a href="{{ root }}guide/using/index.html"{% if page.startswith("guide/using") %} aria-current="page"{% endif %}>Using</a>
+    <a href="{{ root }}guide/contributing/index.html"{% if page.startswith("guide/contributing") %} aria-current="page"{% endif %}>Contributing</a>
+    <a href="{{ root }}method/index.html"{% if section == "method" %} aria-current="page"{% endif %}>Method</a>
+    <a href="{{ HUB_URL }}" class="ext">Source</a>
+  </nav>
+</header>
+
+<main id="content">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="colophon">
+  <div>
+    <p class="sc">Colophon</p>
+    <p>Compiled on {{ build_date }} by <a href="{{ ENGINE_URL }}">Capsid</a> {{ ENGINE_VERSION }} from the recipes and lockfiles in
+      <a href="{{ HUB_URL }}">{{ HUB_REPO }}</a>. Every page is regenerated from those files; nothing here is edited by hand.</p>
+  </div>
+  <div>
+    <p class="sc">Machine-readable</p>
+    <p><a href="{{ root }}catalog.json">catalog.json</a> · <a href="{{ HUB_URL }}/tree/main/schema">JSON Schema</a> · images at <code>{{ REGISTRY }}</code></p>
+  </div>
+  <div>
+    <p class="sc">Licence</p>
+    <p>Recipes and workflows: MIT. Each packaged tool keeps its own licence, recorded with its image.</p>
+  </div>
+</footer>
+</body>
+</html>

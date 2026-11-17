@@ -1,0 +1,33 @@
+{% extends "base.html.j2" %}
+{% block title %}Stacks — Capsid Hub{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> / Stacks</p>
+  <h1>Stacks</h1>
+  <p class="lede">A stack places several recipes in one image, solved together into a single lockfile so that the
+    tools share one consistent set of libraries. Use a stack when a pipeline step calls more than one tool;
+    otherwise prefer the single-tool images.</p>
+</header>
+
+{% if stacks %}
+<table class="booktabs">
+  <caption><span class="figno">Table 1.</span> Published stacks.</caption>
+  <thead><tr><th>Stack</th><th>Version</th><th>Components</th><th class="num">Closure</th><th class="num">Payload</th></tr></thead>
+  <tbody>
+  {% for s in stacks %}
+    <tr>
+      <td class="name"><a href="{{ root }}{{ s.url }}">{{ s.name }}</a><span class="desc">{{ s.description }}</span></td>
+      <td class="mono"><a href="{{ root }}{{ s.url }}">{{ s.version }}</a></td>
+      <td class="mono small">{% for name, ver in s.components %}<a href="{{ root }}tools/{{ name }}/{{ ver }}/index.html">{{ name }}&nbsp;{{ ver }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="num">{{ s.closure_count }}</td>
+      <td class="num">{{ s.closure_bytes | bytes }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No stacks have been published yet.</p>
+{% endif %}
+<p class="footnote">Stacks are defined in <a href="{{ HUB_URL }}/tree/main/stacks"><code>stacks/</code></a>; see
+  <code>capsid stack --help</code> to create one.</p>
+{% endblock %}

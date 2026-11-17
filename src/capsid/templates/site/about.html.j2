@@ -1,0 +1,126 @@
+{% extends "base.html.j2" %}
+{% block title %}Method — Capsid Hub{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> / Method</p>
+  <h1>Method</h1>
+  <p class="lede">How an image in this hub is specified, built, published and checked, and what that does and does
+    not guarantee. The engine's own documentation gives the full reference.</p>
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <ol>
+    <li><a href="#specification">Specification</a></li>
+    <li><a href="#locking">Locking</a></li>
+    <li><a href="#building">Building</a></li>
+    <li><a href="#image">Image layout</a></li>
+    <li><a href="#publishing">Publishing</a></li>
+    <li><a href="#updates">Updates</a></li>
+    <li><a href="#limits">Limits</a></li>
+  </ol>
+</nav>
+
+<section class="numbered" id="specification">
+  <h2><span class="secno">1</span>Specification</h2>
+  <div class="body">
+    <p>A tool version is described by one file, <code>recipes/&lt;tool&gt;/&lt;version&gt;/recipe.yaml</code>: its
+      identity (name, version, licence, homepage, optional DOI and EDAM terms), the architectures it supports, how to
+      obtain it and an acceptance test. The build type decides where packages come from:</p>
+    <table class="booktabs">
+      <thead><tr><th>Build type</th><th>Packages from</th><th>Lockfile</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">pixi-conda</td><td>conda-forge and Bioconda, solved by pixi</td><td class="mono">pixi.lock</td></tr>
+        <tr><td class="mono">uv-pypi</td><td>PyPI, solved by uv</td><td class="mono">requirements.lock</td></tr>
+        <tr><td class="mono">autotools · cmake · make</td><td>a release archive pinned by SHA-256, compiled in the builder stage</td><td>checksum in the recipe</td></tr>
+        <tr><td class="mono">rust-cargo</td><td>a source archive pinned by SHA-256, built with <code>cargo install --locked</code></td><td>checksum and <code>Cargo.lock</code></td></tr>
+        <tr><td class="mono">binary</td><td>a pre-built release archive pinned by SHA-256</td><td>checksum in the recipe</td></tr>
+      </tbody>
+    </table>
+    <p>Recipes are validated against a published <a href="{{ HUB_URL }}/tree/main/schema">JSON Schema</a> and by
+      <code>capsid lint</code>. <a href="{{ ENGINE_URL }}/blob/main/docs/recipe-reference.md">Recipe reference →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="locking">
+  <h2><span class="secno">2</span>Locking</h2>
+  <div class="body">
+    <p>The solver runs once, when the recipe is written, inside a pinned solver image, and its output is committed
+      next to the recipe. The lockfile names each package by URL and SHA-256 for every target architecture. The image
+      build installs exactly that list and does not consult the solver again; a checksum mismatch aborts it.
+      Re-running a build months later therefore installs the same files.</p>
+  </div>
+</section>
+
+<section class="numbered" id="building">
+  <h2><span class="secno">3</span>Building</h2>
+  <div class="body">
+    <p>Images are multi-stage builds. The builder stage installs the locked closure; the runtime stage starts from a
+      Debian slim image referenced by digest, with system packages taken from a dated
+      <a href="https://snapshot.debian.org/">snapshot.debian.org</a> archive, so <code>apt</code> resolves the same
+      versions on every build. File timestamps in every layer are clamped to <code>SOURCE_DATE_EPOCH</code>, so a rebuild from the same
+      recipe, lockfile and engine version is expected to yield the same image digest.
+      <a href="{{ ENGINE_URL }}/blob/main/docs/reproducibility.md">Reproducibility guide →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="image">
+  <h2><span class="secno">4</span>Image layout</h2>
+  <div class="body">
+    <table class="booktabs">
+      <tbody>
+        <tr><th scope="row">User</th><td>numeric, non-root <code>1000:1000</code>; works under Apptainer's user mapping and Kubernetes <code>runAsNonRoot</code></td></tr>
+        <tr><th scope="row">Init</th><td><code>tini</code> as PID 1, forwarding signals and reaping children</td></tr>
+        <tr><th scope="row">Tool tree</th><td>read-only for the runtime user</td></tr>
+        <tr><th scope="row"><code>/etc/capsid/</code></th><td>the recipe, the lockfile, an SPDX SBOM, RO-Crate metadata, a Nextflow module and a Snakemake rule</td></tr>
+        <tr><th scope="row">Labels</th><td>OCI labels for title, version, description, licence, upstream URL and source repository, plus <code>io.capsid.*</code> labels pointing to the files above</td></tr>
+      </tbody>
+    </table>
+    <p><a href="{{ ENGINE_URL }}/blob/main/docs/image-design.md">Image design →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="publishing">
+  <h2><span class="secno">5</span>Publishing</h2>
+  <div class="body">
+    <table class="booktabs">
+      <thead><tr><th>Event</th><th>Workflow</th><th>Does</th><th>Permissions</th></tr></thead>
+      <tbody>
+        <tr><td>Pull request changes a recipe or stack</td><td class="mono">pr-audit</td><td>schema check, lint, build and test of each changed file</td><td>read-only</td></tr>
+        <tr><td>Recipe submitted through the issue form</td><td class="mono">issue-submission</td><td>build and test in isolation; opens a pull request if it passes</td><td>build job read-only</td></tr>
+        <tr><td>Merge to <code>main</code></td><td class="mono">publish-release</td><td>build per architecture, test, push, sign, attest; pull the signed digest on native amd64 and arm64 and test again</td><td><code>packages: write</code>, <code>id-token: write</code></td></tr>
+        <tr><td>Fridays, 04:00 UTC</td><td class="mono">friday-robot-sync</td><td>proposes recipes for new Bioconda releases as a pull request</td><td>opens pull requests only</td></tr>
+      </tbody>
+    </table>
+    <p>The workflows install the Capsid engine from a fixed commit, so a change to the engine cannot alter a
+      published image without a reviewed change to this repository.
+      <a href="{{ ENGINE_URL }}/blob/main/docs/security.md">Security model →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="updates">
+  <h2><span class="secno">6</span>Updates</h2>
+  <div class="body">
+    <p>A published version is not rebuilt with new tool or library versions; those arrive as a new recipe version.
+      An existing version may be republished after the engine's weekly update of base-image and snapshot pins, to pick
+      up security fixes in the runtime layer. That moves the tag, never an existing digest. Pipelines that must be
+      exactly repeatable should reference digests.</p>
+  </div>
+</section>
+
+<section class="numbered" id="limits">
+  <h2><span class="secno">7</span>Limits</h2>
+  <div class="body">
+    <ul class="plain">
+      <li>The lockfile fixes what is installed, not what the upstream package build contains; a compromised upstream
+        artefact would be locked faithfully. Signatures establish where an image was built, not that its sources are sound.</li>
+      <li>Digests on this site are resolved when the site is compiled; the registry remains the authority.</li>
+      <li>PyPI lockfiles do not record licences; for <code>uv-pypi</code> images the licence column defers to PyPI and the SBOM.</li>
+      <li>Identical digests on rebuild are the design target and can be checked with the procedure in the
+        <a href="{{ ENGINE_URL }}/blob/main/docs/reproducibility.md#verifying-a-rebuild">reproducibility guide</a>. Source builds can
+        still differ in bytes when a build tool ignores <code>SOURCE_DATE_EPOCH</code> or embeds paths or host names.</li>
+      <li>An artefact deleted upstream (a yanked release, a moved URL) makes a recipe unbuildable; the published
+        images remain available, and their embedded lockfile and SBOM still document what was used.</li>
+    </ul>
+  </div>
+</section>
+{% endblock %}

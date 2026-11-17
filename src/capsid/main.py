@@ -585,14 +585,14 @@ def catalog(
 def generate_docs(
     recipes_dir: Path = typer.Option(Path("recipes"), "--dir", "-d", help="Recipes directory to scan"),
     catalog_path: Path = typer.Option(Path("catalog.json"), "--catalog", "-c", help="Path to catalog.json"),
-    out_dir: Path = typer.Option(Path("."), "--out-dir", "-o", help="Output directory for CATALOG.md and catalog.html"),
+    out_dir: Path = typer.Option(Path("."), "--out-dir", "-o", help="Output directory for CATALOG.md"),
 ):
     """
-    🌐 Generates CATALOG.md and the searchable catalog.html from catalog.json.
+    📄 Generates CATALOG.md from catalog.json (the website is built by `capsid site`).
     """
     import json
 
-    from capsid.docs_gen import generate_catalog_html, generate_catalog_markdown
+    from capsid.docs_gen import generate_catalog_markdown
 
     if not catalog_path.exists():
         console.print(f"[cyan]Compiling catalog from {recipes_dir}...[/cyan]")
@@ -600,16 +600,9 @@ def generate_docs(
     else:
         cat = json.loads(catalog_path.read_text())
 
-    md_content = generate_catalog_markdown(cat)
     md_file = out_dir / "CATALOG.md"
-    md_file.write_text(md_content)
-
-    html_content = generate_catalog_html(cat)
-    html_file = out_dir / "catalog.html"
-    html_file.write_text(html_content)
-
+    md_file.write_text(generate_catalog_markdown(cat))
     console.print(f"[bold green]✔ Generated Markdown registry at [cyan]{md_file}[/cyan][/bold green]")
-    console.print(f"[bold green]✔ Generated Interactive Web Catalog at [cyan]{html_file}[/cyan][/bold green]")
 
 
 @app.command()
@@ -672,6 +665,26 @@ def lint(
         console.print(
             f"\n[bold green]✔ All {len(target_files)} file(s) passed audit with zero errors or warnings![/bold green]"
         )
+
+
+@app.command("site")
+def generate_site(
+    hub_dir: Path = typer.Option(Path("."), "--hub", help="Capsid Hub checkout (with recipes/ and stacks/)"),
+    out_dir: Path = typer.Option(Path("_site"), "--out", "-o", help="Output directory (replaced)"),
+    page_size: int = typer.Option(8, "--page-size", min=1, help="Tools per catalogue page"),
+    digests: bool = typer.Option(False, "--resolve-digests", help="Look up each image's digest in the registry"),
+):
+    """
+    🌐 Builds the hub website: presentation, paginated catalogue, guides and one page per image.
+    """
+    from capsid.site import build_site
+
+    stats = build_site(hub_dir, out_dir, page_size=page_size, digests=digests)
+    console.print(
+        f"[bold green]✔ Site written to [cyan]{out_dir}[/cyan][/bold green]: {stats['tools']} tools, "
+        f"{stats['images']} images, {stats['catalogue_pages']} catalogue page(s)"
+        + (f", {stats['digests']} digests resolved" if digests else "")
+    )
 
 
 @app.command()

@@ -209,7 +209,23 @@ snippets.
 capsid docs [--dir/-d recipes] [--catalog/-c catalog.json] [--out-dir/-o .]
 ```
 
-Generates `CATALOG.md` and a searchable `catalog.html` page from `catalog.json`.
+Generates `CATALOG.md` from `catalog.json`.
+
+---
+
+## `capsid site`
+
+```
+capsid site [--hub .] [--out/-o _site] [--page-size 8] [--resolve-digests]
+```
+
+Builds the hub website from a hub checkout: a presentation page, a paginated catalogue, the guides
+*Using the images* and *Submitting a tool*, a method page, and one page per tool, tool version and
+stack. Each image page shows the tag and digest references, usage for Docker, Apptainer, Nextflow,
+Snakemake and the CLI, the verification commands, the locked closure read from the lockfile
+(per architecture, paginated) and the recipe. `--resolve-digests` asks the registry for each
+image's digest (anonymous pull token); without it pages show tag references only. Links are relative,
+so the output works on GitHub Pages and from disk. The output directory is replaced.
 
 ---
 

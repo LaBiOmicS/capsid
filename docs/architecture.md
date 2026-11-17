@@ -33,7 +33,8 @@ recipe.yaml ──► models.Recipe (pydantic) ──► linter ──► capsid
      │                                                                          ▼
      │                                            runner.publish_image (multi-arch push)
      ▼
-catalog ──► catalog.json ──► docs_gen ──► CATALOG.md, catalog.html
+catalog ──► catalog.json ──► docs_gen ──► CATALOG.md
+         recipes + lockfiles ──► site ──► hub website (GitHub Pages)
 ```
 
 ## Modules
@@ -55,7 +56,8 @@ catalog ──► catalog.json ──► docs_gen ──► CATALOG.md, catalog.
 | `sbom.py`, `ro_crate.py` | Embedded SPDX SBOM and RO-Crate metadata. |
 | `templating.py` | Jinja2 environment and filters (`dq`, `shq`, `heredoc`). |
 | `scaffolders/` | `capsid init` for PyPI, Bioconda and GitHub. |
-| `catalog.py`, `docs_gen.py` | `catalog.json`, `CATALOG.md` and `catalog.html` for the hub. |
+| `catalog.py`, `docs_gen.py` | `catalog.json` and `CATALOG.md` for the hub. |
+| `site.py`, `templates/site/` | The hub website (`capsid site`). |
 | `publisher.py`, `syncer.py` | `capsid submit` and `capsid sync`. |
 | `bot.py` | The upstream robot (`capsid bot`). |
 

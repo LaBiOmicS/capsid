@@ -1,0 +1,84 @@
+{% macro code(text, lang="") -%}
+<div class="code"><button type="button" class="copy" data-copy aria-label="Copy to clipboard">copy</button><pre{% if lang %} data-lang="{{ lang }}"{% endif %}><code>{{ text }}</code></pre></div>
+{%- endmacro %}
+
+{% macro shq(s) -%}
+'{{ s | replace("'", "'\\''") }}'
+{%- endmacro %}
+
+{% macro usage(img, uid) %}
+{% set ref = img.pinned_ref %}
+{% set ident = img.name | replace("-", "_") | replace(".", "_") %}
+{% set run = "bash -c " ~ shq(img.test_command) %}
+<div class="tabs" data-tabs>
+  <div class="tablist" role="tablist" aria-label="Execution environment">
+    <button type="button" role="tab" id="{{ uid }}-t1" aria-controls="{{ uid }}-p1" aria-selected="true">Docker / Podman</button>
+    <button type="button" role="tab" id="{{ uid }}-t2" aria-controls="{{ uid }}-p2" aria-selected="false">Apptainer (HPC)</button>
+    <button type="button" role="tab" id="{{ uid }}-t3" aria-controls="{{ uid }}-p3" aria-selected="false">Nextflow</button>
+    <button type="button" role="tab" id="{{ uid }}-t4" aria-controls="{{ uid }}-p4" aria-selected="false">Snakemake</button>
+    <button type="button" role="tab" id="{{ uid }}-t5" aria-controls="{{ uid }}-p5" aria-selected="false">Capsid CLI</button>
+  </div>
+  <section role="tabpanel" id="{{ uid }}-p1" aria-labelledby="{{ uid }}-t1">
+    <h4 class="panel-title">Docker / Podman</h4>
+    <p>Runs as your user, with the working directory mounted at <code>/data</code>. The command shown is the image's own acceptance test.</p>
+{{ code("docker pull " ~ ref ~ "\ndocker run --rm -u \"$(id -u):$(id -g)\" -v \"$PWD:/data\" -w /data \\\n  " ~ ref ~ " \\\n  " ~ run, "sh") }}
+  </section>
+  <section role="tabpanel" id="{{ uid }}-p2" aria-labelledby="{{ uid }}-t2">
+    <h4 class="panel-title">Apptainer / Singularity</h4>
+    <p>Convert once to a SIF file on a login node, then execute it on compute nodes without a container daemon.</p>
+{{ code("apptainer pull " ~ img.name ~ "_" ~ img.version ~ ".sif docker://" ~ ref ~ "\napptainer exec " ~ img.name ~ "_" ~ img.version ~ ".sif " ~ run, "sh") }}
+  </section>
+  <section role="tabpanel" id="{{ uid }}-p3" aria-labelledby="{{ uid }}-t3">
+    <h4 class="panel-title">Nextflow</h4>
+    <p>Assign the image to the processes that call the tool, in <code>nextflow.config</code>. The same reference works with <code>-profile docker</code>, <code>podman</code>, <code>apptainer</code> or <code>singularity</code>.</p>
+{{ code("process {\n    withName: '.*" ~ (img.name | upper | replace("-", "_") | replace(".", "_")) ~ ".*' {\n        container = '" ~ ref ~ "'\n    }\n}", "groovy") }}
+  </section>
+  <section role="tabpanel" id="{{ uid }}-p4" aria-labelledby="{{ uid }}-t4">
+    <h4 class="panel-title">Snakemake</h4>
+    <p>Declare the image per rule and run with <code>snakemake --software-deployment-method apptainer</code> (Snakemake ≥ 8).</p>
+{{ code("rule " ~ ident ~ ":\n    input: \"data/{sample}.in\"\n    output: \"results/{sample}.out\"\n    container: \"docker://" ~ ref ~ "\"\n    shell: \"" ~ img.name ~ " ... {input} > {output}\"", "python") }}
+  </section>
+  <section role="tabpanel" id="{{ uid }}-p5" aria-labelledby="{{ uid }}-t5">
+    <h4 class="panel-title">Capsid CLI</h4>
+    <p>Generate a complete module, rule or definition file for this image. The CLI looks for the recipe in <code>./recipes</code>; <code>capsid sync</code> downloads the hub's recipes there first.</p>
+{% if img.kind == "tool" %}
+{% set t = img.name ~ "@" ~ img.version %}
+{{ code("capsid sync\ncapsid export nextflow " ~ t ~ " --out modules/" ~ img.name ~ ".nf\ncapsid export snakemake " ~ t ~ " --out rules/" ~ img.name ~ ".smk\ncapsid export config --target " ~ t ~ " --out nextflow.config\ncapsid export def " ~ t ~ " --out " ~ img.name ~ ".def", "sh") }}
+{% else %}
+{{ code("capsid test " ~ img.definition_path ~ " --image " ~ ref, "sh") }}
+{% endif %}
+  </section>
+</div>
+{% endmacro %}
+
+{% macro verify(img) %}
+{% set ref = img.pinned_ref %}
+{{ code("IMAGE=" ~ ref ~ "\nID='^https://github.com/" ~ HUB_REPO ~ "/\\.github/workflows/publish-release\\.yaml@'\nISSUER=https://token.actions.githubusercontent.com\n\n# 1. Signature: made by this hub's publish workflow, recorded in Rekor\ncosign verify \"$IMAGE\" --certificate-identity-regexp \"$ID\" --certificate-oidc-issuer \"$ISSUER\"\n\n# 2. SBOM attestation (SPDX). This flag is for Cosign 3; with Cosign 2, omit it\ncosign verify-attestation --new-bundle-format=false --type spdxjson \"$IMAGE\" \\\n  --certificate-identity-regexp \"$ID\" --certificate-oidc-issuer \"$ISSUER\" > /dev/null\n\n# 3. SLSA build provenance\ngh attestation verify \"oci://$IMAGE\" --repo " ~ HUB_REPO, "sh") }}
+{% endmacro %}
+
+{% macro pager(page_no, pages_n, href) %}
+{% if pages_n > 1 %}
+<nav class="pager" aria-label="Pagination">
+  {% if page_no > 1 %}<a href="{{ href(page_no - 1) }}" rel="prev">← Previous</a>{% else %}<span class="off">← Previous</span>{% endif %}
+  <ol>
+  {% for n in range(1, pages_n + 1) %}
+    <li>{% if n == page_no %}<span aria-current="page">{{ n }}</span>{% else %}<a href="{{ href(n) }}">{{ n }}</a>{% endif %}</li>
+  {% endfor %}
+  </ol>
+  {% if page_no < pages_n %}<a href="{{ href(page_no + 1) }}" rel="next">Next →</a>{% else %}<span class="off">Next →</span>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro tool_rows(tools, root) %}
+{% for t in tools %}
+<tr>
+  <td class="name"><a href="{{ root }}{{ t.url }}">{{ t.name }}</a><span class="desc">{{ t.description }}</span></td>
+  <td class="mono">{% for v in t.versions %}<a href="{{ root }}{{ v.url }}">{{ v.version }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  <td class="mono">{{ t.latest.build_type }}</td>
+  <td class="mono">{{ t.latest.platforms | map("arch") | join(" ") }}</td>
+  <td class="num">{{ t.latest.closure_count }}</td>
+  <td class="mono small">{{ t.license }}</td>
+</tr>
+{% endfor %}
+{% endmacro %}

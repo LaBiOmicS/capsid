@@ -1,0 +1,145 @@
+{% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
+{% block title %}Capsid Hub — reproducible containers for bioinformatics{% endblock %}
+{% block content %}
+<section class="opening">
+  <div class="opening-text">
+    <p class="kicker sc">A registry of reproducible containers for bioinformatics</p>
+    <h1>Container images whose contents can be stated, checked and rebuilt.</h1>
+    <p class="abstract"><span class="sc">Abstract.</span>
+      Capsid builds each bioinformatics tool into an OCI image from a declarative recipe and a lockfile
+      that names every dependency by checksum. Images are built for x86-64 and, where the tool supports it, ARM64; they are tested, signed and
+      attested in public continuous integration, then pulled and tested again on native hardware of each
+      architecture. This hub holds the recipes and documents, image by image, what was installed, how it
+      was built and how to verify it.</p>
+    <p class="entry">
+      <a href="catalogue/index.html" class="lead-link">Browse the catalogue</a>
+      <span class="sep">or</span>
+      <a href="method/index.html">read the method</a>
+    </p>
+  </div>
+  <figure class="fig-capsid" id="fig1">
+    <svg viewBox="0 0 240 240" role="img" aria-labelledby="fig1-cap" data-capsid>
+      <circle cx="120" cy="120" r="34" class="genome"/>
+      <path d="M100 120 q10 -16 20 0 t20 0" class="genome-strand"/>
+      {% for l in capsid_lines %}
+      <line x1="{{ l.x1 }}" y1="{{ l.y1 }}" x2="{{ l.x2 }}" y2="{{ l.y2 }}" class="{{ 'back' if l.back else 'front' }}"/>
+      {% endfor %}
+    </svg>
+    <figcaption id="fig1-cap"><span class="figno">Fig. 1.</span> The image as a capsid. A hardened shell
+      (numeric non-root user, read-only tool tree, signature) encloses the payload: one tool and its locked
+      dependency closure. Icosahedron, 20 faces, 12 vertices. <span class="hint">Drag to rotate.</span></figcaption>
+  </figure>
+</section>
+
+<section class="numbered" id="inventory">
+  <h2><span class="secno">1</span>Inventory</h2>
+  <div class="body">
+    <table class="booktabs inventory">
+      <caption><span class="figno">Table 1.</span> Contents of this hub at compilation ({{ build_date }}).</caption>
+      <tbody>
+        <tr><th scope="row">Tools</th><td class="num">{{ inventory.tools }}</td><td class="note">distinct programs with at least one published version</td></tr>
+        <tr><th scope="row">Images</th><td class="num">{{ inventory.images }}</td><td class="note">{{ inventory.tool_images }} tool versions and {{ inventory.stacks }} multi-tool stacks</td></tr>
+        <tr><th scope="row">Multi-architecture</th><td class="num">{{ inventory.multiarch }}</td><td class="note">images published for both linux/amd64 and linux/arm64 under one tag</td></tr>
+        <tr><th scope="row">Locked artefacts</th><td class="num">{{ inventory.artefacts }}</td><td class="note">distinct packages named by URL and SHA-256 across all lockfiles</td></tr>
+        <tr><th scope="row">Locked payload</th><td class="num">{{ inventory.bytes | bytes }}</td><td class="note">compressed size of the locked Conda packages (PyPI lockfiles record no sizes)</td></tr>
+        <tr><th scope="row">Package ecosystems</th><td class="num">{{ inventory.conda }} / {{ inventory.pypi }}</td><td class="note">images with Conda (pixi) / PyPI (uv) packages; a stack can have both</td></tr>
+        {% if digests_resolved %}
+        <tr><th scope="row">Digests resolved</th><td class="num">{{ inventory.digests }} / {{ inventory.images }}</td><td class="note">images found in the registry at compilation, referenced by digest below</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="numbered" id="premises">
+  <h2><span class="secno">2</span>Premises</h2>
+  <div class="body">
+    <p>A tag such as <code>samtools:1.25</code> names a program, not an environment. The numbers a pipeline
+      produces also depend on the exact builds of compression libraries, the C runtime and dozens of other
+      packages, which differ between two builds of the same tag made a month apart. Capsid treats that
+      environment as an object to be published alongside the image:</p>
+    <ol class="propositions">
+      <li><strong>The closure is locked.</strong> Every image is installed from a lockfile that lists each
+        package by URL and SHA-256, per architecture. The lockfile is in the repository, inside the image, and
+        reproduced on each image page of this site.</li>
+      <li><strong>The build is attested.</strong> Images are built by a public workflow from a pinned base image
+        and a dated Debian snapshot, then signed with a short-lived certificate bound to that workflow. An SPDX
+        SBOM and SLSA provenance travel with the image.</li>
+      <li><strong>The result is checked where it runs.</strong> After publication, the signed digest is pulled on
+        native amd64 and arm64 machines and the recipe's acceptance test is run again.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="numbered" id="method">
+  <h2><span class="secno">3</span>From recipe to verified image</h2>
+  <div class="body">
+    <figure class="schematic" id="fig2">
+      <ol class="stages">
+        <li><span class="stage-no">i</span><strong>Recipe</strong><span class="io">recipe.yaml</span><span class="what">tool, version, packages, test</span></li>
+        <li><span class="stage-no">ii</span><strong>Lock</strong><span class="io">pixi.lock · requirements.lock</span><span class="what">closure solved once, by checksum</span></li>
+        <li><span class="stage-no">iii</span><strong>Build</strong><span class="io">amd64 ∥ arm64</span><span class="what">base by digest, apt by snapshot</span></li>
+        <li><span class="stage-no">iv</span><strong>Test</strong><span class="io">capsid test</span><span class="what">acceptance command, exit code</span></li>
+        <li><span class="stage-no">v</span><strong>Sign · attest</strong><span class="io">Cosign · SPDX · SLSA</span><span class="what">keyless, logged in Rekor</span></li>
+        <li><span class="stage-no">vi</span><strong>Verify</strong><span class="io">native runners</span><span class="what">pull digest, test again</span></li>
+      </ol>
+      <figcaption><span class="figno">Fig. 2.</span> Publication pipeline. Stages i–ii happen in a pull request and
+        are reviewed by a maintainer; iii–vi run in <code>publish-release</code> after the merge, the only job holding
+        write access to the registry. Details in <a href="method/index.html">Method</a>.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="numbered" id="catalogue">
+  <h2><span class="secno">4</span>Catalogue</h2>
+  <div class="body">
+    <table class="booktabs tools">
+      <caption><span class="figno">Table 2.</span> Tools in the hub, with the build of their latest version.
+        <em>Closure</em> counts the locked artefacts in one architecture of the image.</caption>
+      <thead><tr><th>Tool</th><th>Versions</th><th>Build</th><th>Arch.</th><th class="num">Closure</th><th>Licence</th></tr></thead>
+      <tbody>
+{{ m.tool_rows(tools[:6], root) }}
+      </tbody>
+    </table>
+    <p class="more"><a href="catalogue/index.html">All {{ tools | length }} tools, searchable and filterable →</a>
+      {% if stacks %}<span class="sep">·</span><a href="stacks/index.html">{{ stacks | length }} stacks →</a>{% endif %}</p>
+  </div>
+</section>
+
+{% if example %}
+<section class="numbered" id="example">
+  <h2><span class="secno">5</span>A worked example</h2>
+  <div class="body">
+    <p>Running <a href="{{ example.url }}">{{ example.name }} {{ example.version }}</a> in each supported environment.
+      {% if example.digest %}The reference is pinned by digest, so it cannot be re-pointed by a later republish.
+      {% else %}For published work, pin the image by digest (<code>…@sha256:…</code>); each image page lists it.{% endif %}</p>
+    {{ m.usage(example, "ex") }}
+    <p>More environments, HPC and offline clusters: <a href="guide/using/index.html">Using the images →</a></p>
+    <p>Before relying on an image, verify that it was produced by this hub's publish workflow:</p>
+    {{ m.verify(example) }}
+  </div>
+</section>
+{% endif %}
+
+<section class="numbered" id="contribute">
+  <h2><span class="secno">6</span>Contributing a tool</h2>
+  <div class="body two-col">
+    <div>
+      <h3>By pull request</h3>
+      <p>Add <code>recipes/&lt;tool&gt;/&lt;version&gt;/recipe.yaml</code>, run <code>capsid lock</code> to produce the
+        lockfile and open a pull request. The audit workflow validates the schema, lints the recipe and builds and
+        tests it without write permissions.</p>
+      <p><a href="guide/contributing/index.html">Step-by-step guide →</a></p>
+    </div>
+    <div>
+      <h3>By issue form</h3>
+      <p>Fill in the <a href="{{ HUB_URL }}/issues/new/choose">New recipe</a> form. The recipe is built and tested in
+        isolation; if it passes, a pull request is opened for review.</p>
+      <h3>Upstream robot</h3>
+      <p>Every Friday the hub checks Bioconda for tools released in the previous week and proposes recipes in a
+        pull request. Nothing is published before a maintainer merges it.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

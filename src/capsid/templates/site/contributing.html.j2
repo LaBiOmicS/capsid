@@ -1,0 +1,210 @@
+{% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
+{% block title %}Submitting a tool — Capsid Hub{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> / Guides / Submitting a tool</p>
+  <h1>Submitting a tool</h1>
+  <p class="lede">A contribution is a recipe (one tool version) or a stack (several tools in one image), with its
+    lockfile. After review and merge, the image is built, tested, signed and published to
+    <code>{{ REGISTRY }}</code> without further action from you.</p>
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <ol>
+    <li><a href="#routes">Three routes</a></li>
+    <li><a href="#prerequisites">Prerequisites</a></li>
+    <li><a href="#steps">Step by step</a></li>
+    <li><a href="#anatomy">Anatomy of a recipe</a></li>
+    <li><a href="#build-types">Choosing a build type</a></li>
+    <li><a href="#tests">Writing the test</a></li>
+    <li><a href="#stacks">Stacks</a></li>
+    <li><a href="#review">Review</a></li>
+    <li><a href="#after">After the merge</a></li>
+    <li><a href="#updates">Updating a tool</a></li>
+  </ol>
+</nav>
+
+<section class="numbered" id="routes">
+  <h2><span class="secno">1</span>Three routes</h2>
+  <div class="body">
+    <table class="booktabs">
+      <thead><tr><th>Route</th><th>You need</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Pull request</th><td>Git, the Capsid CLI, Docker or Podman</td>
+          <td>You write, lock and build the recipe locally; the audit workflow repeats lint, build and test. Fastest to merge.</td></tr>
+        <tr><th scope="row">Issue form</th><td>a GitHub account and a recipe</td>
+          <td>Paste the recipe into the <a href="{{ HUB_URL }}/issues/new?template=new_recipe.yml">New recipe</a> form. It is linted,
+            built and tested in isolation; if that passes, a pull request is opened and a maintainer adds the lockfile before merging.</td></tr>
+        <tr><th scope="row">Request</th><td>a GitHub account</td>
+          <td>Tools released on Bioconda are proposed every Friday by the upstream robot. For anything else, open an
+            <a href="{{ HUB_URL }}/issues">issue</a> naming the tool and version.</td></tr>
+      </tbody>
+    </table>
+    <p>Check the <a href="{{ root }}catalogue/index.html">catalogue</a> and the
+      <a href="{{ HUB_URL }}/pulls">open pull requests</a> first: the version may already exist or be under review.</p>
+  </div>
+</section>
+
+<section class="numbered" id="prerequisites">
+  <h2><span class="secno">2</span>Prerequisites</h2>
+  <div class="body">
+{{ m.code("# Capsid CLI (Python 3.12+), installed with uv\nuv tool install git+" ~ ENGINE_URL ~ ".git\ncapsid --help\n\n# A container engine: Docker with BuildKit, or Podman\ndocker buildx version", "sh") }}
+    <p>The lock step runs the solvers (pixi, uv) inside pinned container images, so nothing else needs to be
+      installed on the host. Editors validate recipes as you type with the JSON Schema in
+      <a href="{{ HUB_URL }}/tree/main/schema"><code>schema/</code></a>; VS Code picks it up from the repository settings.</p>
+  </div>
+</section>
+
+<section class="numbered" id="steps">
+  <h2><span class="secno">3</span>Step by step</h2>
+  <div class="body">
+    <ol class="steps">
+      <li><h3>Fork and branch</h3>
+{{ m.code("gh repo fork " ~ HUB_REPO ~ " --clone && cd capsid-hub\ngit switch -c add-<tool>-<version>", "sh") }}</li>
+      <li><h3>Generate the recipe</h3>
+        <p><code>capsid init</code> reads the upstream metadata and writes <code>recipes/&lt;tool&gt;/&lt;version&gt;/recipe.yaml</code>.
+          Writing it by hand is equally valid.</p>
+{{ m.code("capsid init bioconda:<tool>@<version>          # package on Bioconda / conda-forge\ncapsid init pypi:<tool>@<version>              # pure Python package\ncapsid init github:<owner>/<repo> -v <version>  # source release", "sh") }}</li>
+      <li><h3>Review it</h3>
+        <p>Generated recipes are a starting point. Check the description, the SPDX licence, the platforms and above all the
+          test (see <a href="#tests">§6</a>).</p></li>
+      <li><h3>Lock the closure</h3>
+{{ m.code("capsid lock recipes/<tool>/<version>/recipe.yaml", "sh") }}
+        <p>Writes <code>pixi.lock</code> or <code>requirements.lock</code> next to the recipe, for every platform it lists.
+          Source and binary recipes have no lockfile; their archives are pinned by <code>sha256</code> in the recipe.</p></li>
+      <li><h3>Lint, build and test</h3>
+{{ m.code("capsid lint recipes/<tool>/<version>/recipe.yaml --catalog catalog.json\ncapsid build recipes/<tool>/<version>/recipe.yaml      # runs the test after building", "sh") }}
+        <p>The linter's errors block the merge; warnings need a reason in the pull request.</p></li>
+      <li><h3>Submit</h3>
+{{ m.code("git add recipes/<tool>/<version>/\ngit commit -m \"feat(recipe): add <tool> <version>\"\ngit push -u origin add-<tool>-<version>\ngh pr create --repo " ~ HUB_REPO, "sh") }}
+        <p><code>capsid submit recipes/&lt;tool&gt;/&lt;version&gt;/recipe.yaml</code> lints the recipe and then does the fork,
+          branch, commit, push and pull request in one step with the GitHub CLI; with <code>--web</code> it opens a pre-filled
+          issue instead.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="numbered" id="anatomy">
+  <h2><span class="secno">4</span>Anatomy of a recipe</h2>
+  <div class="body">
+    <div class="anatomy">
+{{ m.code("name: samtools\nversion: '1.25'\ndescription: Tools for dealing with SAM, BAM and CRAM files\nhomepage: https://github.com/samtools/samtools\nlicense: MIT\ncategories: [genomics, alignment]\nplatforms: [linux/amd64, linux/arm64]\nbuild:\n  type: pixi-conda\n  conda_packages: [samtools==1.25]\n  channels: [conda-forge, bioconda]\ntest:\n  command: samtools --version\n  expected_output: samtools 1.25", "yaml") }}
+      <table class="booktabs compact">
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">name, version</td><td>Image name and tag; must equal the directory names. Lowercase name.</td></tr>
+          <tr><td class="mono">description</td><td>One line, at least 10 characters.</td></tr>
+          <tr><td class="mono">homepage, license</td><td>Upstream project and an SPDX identifier or expression that allows redistribution.</td></tr>
+          <tr><td class="mono">doi, edam_topics, edam_operations</td><td>Optional; carried into the RO-Crate metadata and shown on the tool page.</td></tr>
+          <tr><td class="mono">platforms</td><td><code>linux/amd64</code>, <code>linux/arm64</code>: only those where the tool builds and works.</td></tr>
+          <tr><td class="mono">build.type</td><td>Where the software comes from; see <a href="#build-types">§5</a>.</td></tr>
+          <tr><td class="mono">build.conda_packages, channels</td><td>Pinned with <code>==</code> (pixi-conda).</td></tr>
+          <tr><td class="mono">build.package, python_version</td><td>PyPI requirement pinned with <code>==</code> (uv-pypi).</td></tr>
+          <tr><td class="mono">build.source, sha256</td><td>Source archive and its checksum (autotools, cmake, make, rust-cargo).</td></tr>
+          <tr><td class="mono">build.binary_url_amd64, sha256_amd64, …</td><td>Pre-built archive per architecture and checksum (binary).</td></tr>
+          <tr><td class="mono">build.dependencies, build_commands</td><td>Debian packages for build and run; extra shell steps, reviewed line by line.</td></tr>
+          <tr><td class="mono">test.*</td><td>The acceptance test; see <a href="#tests">§6</a>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><a href="{{ ENGINE_URL }}/blob/main/docs/recipe-reference.md">Complete recipe reference →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="build-types">
+  <h2><span class="secno">5</span>Choosing a build type</h2>
+  <div class="body">
+    <p>Prefer, in this order:</p>
+    <ol class="propositions">
+      <li><strong><code>pixi-conda</code></strong> when the tool is on Bioconda or conda-forge. Pre-built for both
+        architectures, lockable, no compilation.</li>
+      <li><strong><code>uv-pypi</code></strong> for pure Python tools on PyPI.</li>
+      <li><strong>A source build</strong> (<code>autotools</code>, <code>make</code>, <code>cmake</code>, <code>rust-cargo</code>)
+        from a release archive pinned by checksum.</li>
+      <li><strong><code>binary</code></strong> only when nothing else exists: the build cannot be inspected.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="numbered" id="tests">
+  <h2><span class="secno">6</span>Writing the test</h2>
+  <div class="body">
+    <p>The test runs after every build, again on native amd64 and arm64 machines after publication, and on users'
+      clusters with <code>capsid test</code>. It should prove that the tool works, not only that a file exists.
+      Trivial commands (<code>true</code>, <code>exit 0</code>, <code>echo</code>) are rejected by the linter.</p>
+    <table class="booktabs">
+      <thead><tr><th>Level</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>Minimum</td><td><code>command: samtools --version</code> with <code>expected_output: samtools 1.25</code></td></tr>
+        <tr><td>Better</td><td>a small computation on inline input (<code>test.files</code>, written to <code>/test</code>) with known output</td></tr>
+        <tr><td>Best</td><td>the above plus <code>output_file</code> and <code>expected_checksum</code>, and <code>random_seed</code> for stochastic tools</td></tr>
+      </tbody>
+    </table>
+{{ m.code("test:\n  files:\n    in.sam: |\n      @SQ\tSN:chr1\tLN:100\n      r1\t0\tchr1\t1\t60\t4M\t*\t0\t0\tACGT\tIIII\n  command: samtools view -c in.sam\n  expected_output: \"1\"", "yaml") }}
+    <p>Tools that print usage and exit non-zero without arguments can set <code>expected_exit_code</code>.</p>
+  </div>
+</section>
+
+<section class="numbered" id="stacks">
+  <h2><span class="secno">7</span>Stacks</h2>
+  <div class="body">
+    <p>A stack combines recipes already in the hub. Its components must be <code>pixi-conda</code> or
+      <code>uv-pypi</code>, share at least one platform and be compatible in one environment, because they are solved together.</p>
+{{ m.code("# stacks/<stack-name>.yaml\nname: <stack-name>\nversion: 1.0.0\ndescription: What the tools are used for together\ncomponents:\n  - recipe: samtools\n    version: \"1.25\"\n  - recipe: bcftools\n    version: \"1.25\"\ntest:\n  command: samtools --version && bcftools --version", "yaml") }}
+{{ m.code("capsid lock stacks/<stack-name>.yaml\ncapsid lint stacks/<stack-name>.yaml\ncapsid build stacks/<stack-name>.yaml\ngit add stacks/<stack-name>.*", "sh") }}
+  </div>
+</section>
+
+<section class="numbered" id="review">
+  <h2><span class="secno">8</span>Review</h2>
+  <div class="body">
+    <p>The pull request is checked automatically, with read-only permissions: the schema is validated,
+      <code>capsid lint</code> runs, and every changed recipe and stack is built and tested. A maintainer then checks:</p>
+    <table class="booktabs">
+      <thead><tr><th>Criterion</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Meaningful test</th><td>it runs the tool and checks a result</td></tr>
+        <tr><th scope="row">Everything pinned</th><td>packages with <code>==</code>, lockfile committed, <code>sha256</code> for every download</td></tr>
+        <tr><th scope="row">Accurate metadata</th><td>description, homepage, a redistributable SPDX licence</td></tr>
+        <tr><th scope="row">Real platforms</th><td><code>linux/arm64</code> only if the tool works there</td></tr>
+        <tr><th scope="row">Readable build steps</th><td>no <code>curl … | sh</code>, <code>sudo</code>, <code>chmod 777</code>, or disabled TLS checks (also lint errors)</td></tr>
+      </tbody>
+    </table>
+    <p>Common lint errors: <code>E003</code>/<code>E004</code> name or version differs from the directory;
+      <code>E011</code> download without checksum; <code>E016</code> lockfile out of date (rerun <code>capsid lock</code>);
+      <code>E017</code> lockfile lacks a listed platform; <code>E030</code> trivial test.
+      <a href="{{ ENGINE_URL }}/blob/main/docs/security.md#recipe-linter">All rules →</a></p>
+  </div>
+</section>
+
+<section class="numbered" id="after">
+  <h2><span class="secno">9</span>After the merge</h2>
+  <div class="body">
+    <ol class="steps compact">
+      <li><code>publish-release</code> builds the image for each listed platform and runs the test.</li>
+      <li>It pushes the multi-architecture tag, signs the digest with Cosign and attaches the SBOM and SLSA provenance.</li>
+      <li>Native amd64 and arm64 runners pull the signed digest, verify the signature and run the test again.</li>
+      <li>The catalogue and this site are regenerated; the tool gets its own pages.</li>
+    </ol>
+    <p>The whole run usually takes a few minutes per image; its log is public in the repository's
+      <a href="{{ HUB_URL }}/actions">Actions</a> tab.</p>
+  </div>
+</section>
+
+<section class="numbered" id="updates">
+  <h2><span class="secno">10</span>Updating a tool</h2>
+  <div class="body">
+    <table class="booktabs">
+      <thead><tr><th>Change</th><th>How</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td>New upstream version</td><td>new directory <code>recipes/&lt;tool&gt;/&lt;new-version&gt;/</code></td><td>new tag; earlier versions stay published</td></tr>
+        <tr><td>Fix to a published version (test, metadata, platform)</td><td>edit in place; explain why in the pull request</td><td>same tag, new digest (lint warning <code>W040</code>)</td></tr>
+        <tr><td>Security fix in a dependency</td><td>rerun <code>capsid lock</code> and commit the lockfile</td><td>same tag, new digest</td></tr>
+      </tbody>
+    </table>
+    <p>To change the engine itself (generated Dockerfiles, CLI), contribute to
+      <a href="{{ ENGINE_URL }}/blob/main/CONTRIBUTING.md">Capsid</a> instead.</p>
+  </div>
+</section>
+{% endblock %}

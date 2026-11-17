@@ -17,3 +17,6 @@ VENDOR = "LaBiOmicS Capsid Project"
 
 # Engine version recorded in image labels and SBOMs (keep equal to pyproject.toml)
 VERSION = "0.1.0"
+
+# Hub website (GitHub Pages), built by `capsid site`
+HUB_SITE = "https://labiomics.github.io/capsid-hub"

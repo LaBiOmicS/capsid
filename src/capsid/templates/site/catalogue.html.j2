@@ -1,0 +1,35 @@
+{% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
+{% block title %}Catalogue{% if page_no > 1 %}, page {{ page_no }}{% endif %} — Capsid Hub{% endblock %}
+{% block content %}
+{% macro href(n) %}{{ root }}{{ "catalogue/index.html" if n == 1 else "catalogue/page/" ~ n ~ "/index.html" }}{% endmacro %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> / Catalogue</p>
+  <h1>Catalogue</h1>
+  <p class="lede">{{ total }} tools in {{ inventory.tool_images }} published versions. Each row links to the tool;
+    each version links to its image page, with the locked closure, usage and verification.</p>
+</header>
+
+<form class="finder" data-finder role="search" onsubmit="return false">
+  <label class="field grow"><span class="sc">Search</span>
+    <input type="search" name="q" placeholder="name, description or category" autocomplete="off" spellcheck="false"></label>
+  <label class="field"><span class="sc">Category</span>
+    <select name="category"><option value="">any</option>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></label>
+  <label class="field"><span class="sc">Build</span>
+    <select name="build"><option value="">any</option>{% for b in builds %}<option>{{ b }}</option>{% endfor %}</select></label>
+  <label class="field"><span class="sc">Arch.</span>
+    <select name="arch"><option value="">any</option><option value="arm64">includes arm64</option><option value="amd64only">amd64 only</option></select></label>
+  <p class="status" aria-live="polite" data-status>Showing {{ (page_no - 1) * page_size + 1 }}–{{ (page_no - 1) * page_size + tools | length }} of {{ total }}.</p>
+</form>
+
+<table class="booktabs tools" data-catalogue data-page-size="{{ page_size }}" data-root="{{ root }}">
+  <thead><tr><th>Tool</th><th>Versions</th><th>Build</th><th>Arch.</th><th class="num">Closure</th><th>Licence</th></tr></thead>
+  <tbody data-static>
+{{ m.tool_rows(tools, root) }}
+  </tbody>
+</table>
+<div data-static-pager>{{ m.pager(page_no, pages_n, href) }}</div>
+<script type="application/json" id="catalogue-index">{{ index_json | safe }}</script>
+<p class="footnote">Closure: locked artefacts installed in one architecture of the latest version. Build:
+  <code>pixi-conda</code> solves from conda-forge and Bioconda; <code>uv-pypi</code> from PyPI; source builds compile from an archive pinned by checksum.</p>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html.j2" %}
+{% import "_macros.html.j2" as m with context %}
+{% block title %}{{ img.name }} {{ img.version }} — Capsid Hub{% endblock %}
+{% block description %}{{ img.description }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="crumbs"><a href="{{ root }}index.html">Capsid Hub</a> /
+  {% if img.kind == "tool" %}<a href="{{ root }}catalogue/index.html">Catalogue</a> / <a href="{{ root }}{{ tool.url }}">{{ img.name }}</a>
+  {% else %}<a href="{{ root }}stacks/index.html">Stacks</a> / {{ img.name }}{% endif %} / {{ img.version }}</p>
+  <h1 class="mono-title">{{ img.name }} <span class="ver">{{ img.version }}</span></h1>
+  <p class="lede">{{ img.description }}</p>
+  {% if img.kind == "tool" and tool.versions | length > 1 %}
+  <p class="other-versions">Other versions:
+    {% for v in tool.versions if v.version != img.version %}<a class="mono" href="{{ root }}{{ v.url }}">{{ v.version }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  {% endif %}
+</header>
+
+<nav class="toc" aria-label="On this page">
+  <ol>
+    <li><a href="#reference">Reference</a></li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#verification">Verification</a></li>
+    <li><a href="#closure">Locked closure</a></li>
+    <li><a href="#recipe">{{ "Recipe" if img.kind == "tool" else "Definition" }}</a></li>
+  </ol>
+</nav>
+
+<section class="numbered" id="reference">
+  <h2><span class="secno">1</span>Reference</h2>
+  <div class="body">
+    <dl class="facts wide">
+      <dt>By tag</dt><dd>{{ m.code(img.tag_ref) }}</dd>
+      <dt>By digest</dt><dd>{% if img.digest %}{{ m.code(img.pinned_ref) }}<span class="note">{% if img.platforms | length > 1 %}Multi-architecture index digest; the runtime selects the matching platform.{% else %}Single-platform image ({{ img.platforms[0] }}).{% endif %}</span>
+        {% else %}<span class="muted">Not resolved at compilation. Run <code>docker buildx imagetools inspect {{ img.tag_ref }}</code>.</span>{% endif %}</dd>
+      <dt>Architectures</dt><dd class="mono">{{ img.platforms | join(", ") }}</dd>
+      <dt>Build</dt><dd class="mono">{{ img.build_type }}</dd>
+      {% if img.kind == "stack" %}
+      <dt>Components</dt><dd>{% for name, ver in img.components %}{% if name in tools %}<a class="mono" href="{{ root }}tools/{{ name }}/{{ ver }}/index.html">{{ name }} {{ ver }}</a>{% else %}<span class="mono">{{ name }} {{ ver }}</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+      {% else %}
+      <dt>Licence</dt><dd class="mono">{{ tool.license }}</dd>
+      {% endif %}
+      <dt>Acceptance test</dt><dd><code>{{ img.test_command }}</code> must exit with {{ img.expected_exit_code }}</dd>
+      <dt>Runtime</dt><dd>user <code>1000:1000</code>, <code>tini</code> as PID 1, tool tree read-only; provenance files in <code>/etc/capsid/</code></dd>
+      <dt>Sources</dt><dd><a href="{{ HUB_URL }}/blob/main/{{ img.definition_path }}">{{ img.definition_path }}</a>{% if img.lockfile_path %} · <a href="{{ HUB_URL }}/blob/main/{{ img.lockfile_path }}">{{ img.lockfile_path.split("/")[-1] }}</a>{% endif %}</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="numbered" id="usage">
+  <h2><span class="secno">2</span>Usage</h2>
+  <div class="body">
+    {{ m.usage(img, "u") }}
+  </div>
+</section>
+
+<section class="numbered" id="verification">
+  <h2><span class="secno">3</span>Verification</h2>
+  <div class="body">
+    <p>Each command fails unless the image was signed by the <code>publish-release</code> workflow of
+      <a href="{{ HUB_URL }}">{{ HUB_REPO }}</a>. The SBOM inside the image can be read without these tools:
+      <code>docker run --rm {{ img.tag_ref }} cat /etc/capsid/sbom.spdx.json</code>.</p>
+    {{ m.verify(img) }}
+  </div>
+</section>
+
+<section class="numbered" id="closure">
+  <h2><span class="secno">4</span>Locked closure</h2>
+  <div class="body">
+    {% if img.closure %}
+    {% set lic = img.licenses() %}{% set total = img.closure_count %}
+    <p>The tool's environment exactly as recorded in
+      <a href="{{ HUB_URL }}/blob/main/{{ img.lockfile_path }}"><code>{{ img.lockfile_path.split("/")[-1] }}</code></a>:
+      {{ total }} artefacts per architecture{% if img.closure_bytes %}, {{ img.closure_bytes | bytes }} compressed{% endif %}.
+      The Debian runtime underneath (base image, <code>tini</code>, system libraries) is pinned separately, by image
+      digest and snapshot date, so the image's SBOM lists more packages than this table.</p>
+
+    <figure class="licences">
+      <table class="booktabs compact">
+        <caption><span class="figno">Table 1.</span> Declared licences in the closure ({{ img.closure_platforms[0] }}).</caption>
+        <tbody>
+        {% for name, n in lic[:8] %}
+          <tr><td class="mono small">{{ name }}</td><td class="num">{{ n }}</td>
+            <td class="bar-cell"><span class="bar" style="--w: {{ (100 * n / total) | round(1) }}%"></span></td></tr>
+        {% endfor %}
+        {% if lic | length > 8 %}<tr><td class="muted small">{{ lic | length - 8 }} others</td><td class="num">{{ lic[8:] | sum(attribute=1) }}</td><td></td></tr>{% endif %}
+        </tbody>
+      </table>
+    </figure>
+
+    <div class="closure" data-closure data-page-size="{{ CLOSURE_PAGE_SIZE }}">
+      <div class="closure-controls">
+        {% if img.closure_platforms | length > 1 %}
+        <div class="segmented" role="group" aria-label="Architecture">
+          {% for p in img.closure_platforms if p != "any" %}
+          <button type="button" data-platform="{{ p }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ p }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <label class="field grow"><span class="sc">Filter</span><input type="search" data-filter placeholder="package or licence" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <table class="booktabs closure-table">
+        <caption><span class="figno">Table 2.</span> Locked artefacts. SHA-256 is the checksum the installer verifies before unpacking.</caption>
+        <thead><tr><th>Package</th><th>Version</th><th>Build</th><th>Source</th><th>Licence</th><th class="num">Size</th><th>SHA-256</th></tr></thead>
+        <tbody data-rows>
+        {% set first = img.closure_platforms[0] %}
+        {% for a in img.closure_for(first) %}
+          <tr><td class="mono"><a href="{{ a.url }}">{{ a.name }}</a></td><td class="mono">{{ a.version }}</td><td class="mono small">{{ a.build }}</td>
+            <td class="small">{{ a.source }}</td><td class="mono small">{{ a.license }}</td><td class="num">{{ a.size | bytes }}</td>
+            <td class="mono small hash" title="{{ a.sha256 }}">{{ a.sha256[:16] }}…</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <nav class="pager" data-closure-pager aria-label="Closure pages" hidden></nav>
+      <script type="application/json" data-closure-json>{{ closure_json | safe }}</script>
+    </div>
+    {% else %}
+    <p class="muted">No lockfile is recorded for this image; its closure is resolved at build time and listed only in the SBOM.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="numbered" id="recipe">
+  <h2><span class="secno">5</span>{{ "Recipe" if img.kind == "tool" else "Definition" }}</h2>
+  <div class="body">
+    <p>The complete input, as committed in <a href="{{ HUB_URL }}/blob/main/{{ img.definition_path }}"><code>{{ img.definition_path }}</code></a>.
+      It is also embedded in the image under <code>/etc/capsid/</code>.</p>
+    {{ m.code(img.definition_text.rstrip(), "yaml") }}
+  </div>
+</section>
+{% endblock %}
